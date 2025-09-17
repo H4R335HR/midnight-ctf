@@ -1,0 +1,28 @@
+# This is a sample mapping file for the Midnight CTF platform
+# Format: filepath|original_secret|secret_type|optional_user
+# Secret types: "flag", "plain text", "base64"
+# Do NOT use real flags in this file if you're pushing to public repositories
+
+# Challenge 1: WiFi Password
+/midnight/network/wifi.conf|SAMPLE_WIFI_PASSWORD|plain text|
+
+# Challenge 2: Web Flag
+/midnight/web/index.php|flag{sample_web_flag}|flag|
+
+# Challenge 3: Barista Password
+/midnight/users/barista/.secret|barista_sample_password|plain text|barista
+
+# Challenge 4: User Flag
+/midnight/users/barista/user.txt|flag{sample_user_flag}|flag|
+
+# Challenge 5: Manager Password
+/midnight/users/manager/.secret|manager_sample_password|plain text|manager
+
+# Challenge 6: Manager Flag
+/midnight/users/manager/manager.txt|flag{sample_manager_flag}|flag|
+
+# Challenge 7: Root Flag
+/midnight/root/root.txt|flag{sample_root_flag}|flag|
+
+# Additional examples showing different secret types
+/midnight/examples/encoded.txt|U2FtcGxlQmFzZTY0U2VjcmV0|base64|

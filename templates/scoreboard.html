@@ -1,0 +1,42 @@
+{% extends 'base.html' %}
+
+{% block title %}Scoreboard - Midnight CTF{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">Scoreboard</h2>
+
+<div class="card">
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>Rank</th>
+                        <th>User</th>
+                        <th>Progress</th>
+                        <th>Last Solved</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for entry in scoreboard %}
+                    <tr>
+                        <td>{{ entry.rank }}</td>
+                        <td>{{ entry.email }}</td>
+                        <td>
+                            <div class="progress" style="height: 20px;">
+                                {% set progress = (entry.solved / total_challenges) * 100 %}
+                                <div class="progress-bar bg-success" role="progressbar" style="width: {{ progress }}%;" 
+                                     aria-valuenow="{{ entry.solved }}" aria-valuemin="0" aria-valuemax="{{ total_challenges }}">
+                                    {{ entry.solved }}/{{ total_challenges }}
+                                </div>
+                            </div>
+                        </td>
+                        <td>{{ entry.last_solve|default('N/A') }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

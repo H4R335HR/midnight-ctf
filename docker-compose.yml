@@ -1,0 +1,16 @@
+version: '3'
+
+services:
+  ctf-platform:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./admin_mapping.txt:/app/admin_mapping.txt
+      - ./instance:/app/instance
+    environment:
+      - SECRET_KEY=bd79e79949e489b8187d38270652c5435ded0b308e311e696c38b746a693b1b1
+      - MAPPING_FILE=/app/admin_mapping.txt
+    restart: unless-stopped

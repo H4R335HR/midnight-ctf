@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+
+{% block title %}Challenges - Midnight CTF{% endblock %}
+
+{% block content %}
+<h2 class="mb-4">Challenges</h2>
+
+<div class="row">
+    {% for challenge in challenges %}
+    <div class="col-md-6 mb-4">
+        <div class="card {% if challenge.solved %}solved{% endif %}" style="height: 100%;">
+            <div class="card-header">
+                <h5 class="card-title mb-0">{{ challenge.name }}</h5>
+                {% if challenge.solved %}
+                <span class="badge bg-success">Solved</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <p class="card-text">{{ challenge.description }}</p>
+                <div class="mt-3">
+                    <a href="{{ url_for('challenge', challenge_id=challenge.id) }}" class="btn {% if challenge.solved %}btn-success{% else %}btn-primary{% endif %}">
+                        {% if challenge.solved %}View Solution{% else %}Solve Challenge{% endif %}
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+{% if not challenges %}
+<div class="alert alert-info">
+    <p>Congratulations! You have completed all available challenges.</p>
+</div>
+{% endif %}
+{% endblock %}

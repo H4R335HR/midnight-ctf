@@ -1,0 +1,21 @@
+# Ignore real mapping file with actual flags
+admin_mapping.txt
+
+# Ignore database and instance files
+instance/
+*.db
+
+# Ignore Python cache files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment variables
+.env
+
+# Docker volumes
+data/
+
+# System files
+.DS_Store
+Thumbs.db

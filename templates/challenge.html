@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ challenge.challenge_name }} - Midnight CTF{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h4 class="mb-0">{{ challenge.challenge_name }}</h4>
+                {% if solved %}
+                <span class="badge bg-success">Solved</span>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="challenge-description mb-4">
+                    <h5>Mission</h5>
+                    <p class="card-text">{{ challenge.description }}</p>
+                </div>
+                
+                {% if not solved %}
+                <div class="submission-form">
+                    <h5>Submit Flag</h5>
+                    <form method="POST">
+                        {{ form.hidden_tag() }}
+                        <div class="mb-3">
+                            {{ form.flag(class="form-control", placeholder="Enter flag here...") }}
+                            {% if form.flag.errors %}
+                                <div class="text-danger">
+                                    {% for error in form.flag.errors %}
+                                        {{ error }}
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </div>
+                        <div class="d-grid gap-2">
+                            {{ form.submit(class="btn btn-primary") }}
+                        </div>
+                    </form>
+                </div>
+                {% else %}
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle-fill me-2"></i> You've solved this challenge!
+                </div>
+                {% endif %}
+            </div>
+            <div class="card-footer">
+                <a href="{{ url_for('challenges') }}" class="btn btn-secondary">Back to Challenges</a>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
