@@ -39,7 +39,6 @@ A CTF platform designed for the TryHackMe Midnight room, featuring personalized 
 
 4. Access the platform at `http://your-server-ip:5000`
 
-5. Register an admin account with an email ending in `@admin.ctf`
 
 ## Configuration
 
