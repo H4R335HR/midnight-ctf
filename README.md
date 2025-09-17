@@ -21,7 +21,7 @@ A CTF platform designed for the TryHackMe Midnight room, featuring personalized 
 
 1. Clone this repository:
    ```
-   git clone https://github.com/yourusername/midnight-ctf.git
+   git clone https://github.com/{{REPOSITORY_OWNER}}/{{REPOSITORY_NAME}}.git
    cd midnight-ctf
    ```
 
