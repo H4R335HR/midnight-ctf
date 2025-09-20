@@ -1,0 +1,428 @@
+{% extends 'base.html' %}
+{% block title %}Admin Dashboard - Midnight CTF{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-shield-alt me-2"></i>Admin Dashboard</h2>
+    <span class="badge bg-danger fs-6">Admin Only</span>
+</div>
+
+<!-- Overview Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Total Users</h5>
+                        <h2 class="mb-0">{{ users|length }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-users fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Total Challenges</h5>
+                        <h2 class="mb-0">{{ challenges|length }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-flag fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Total Solves</h5>
+                        <h2 class="mb-0">{{ solves|length }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-check-circle fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Active Players</h5>
+                        <h2 class="mb-0">
+                            {% set active_users = users|selectattr('solved_challenges')|list %}
+                            {{ active_users|length }}
+                        </h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-user-check fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Main Admin Content -->
+<div class="row">
+    <!-- Users Management -->
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-users me-2"></i>Users Management</h5>
+                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#usersTable">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+            </div>
+            <div class="card-body p-0 collapse show" id="usersTable">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Challenges Solved</th>
+                                <th>Registered</th>
+                                <th>Last Login</th>
+                                <th>Admin</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr>
+                                <td><span class="badge bg-secondary">{{ user.id }}</span></td>
+                                <td>
+                                    <strong>{{ user.username }}</strong>
+                                    {% if user.is_admin %}
+                                        <span class="badge bg-danger ms-1">Admin</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <strong class="text-info">{{ user.email }}</strong>
+                                    <br>
+                                    <small class="text-muted">{{ user.email.split('@')[1] if '@' in user.email else '' }}</small>
+                                </td>
+                                <td>
+                                    <span class="badge bg-success">{{ user.solved_challenges|length }}</span>
+                                    {% if user.solved_challenges|length > 0 %}
+                                        <div class="progress mt-1" style="height: 4px;">
+                                            {% set user_progress = (user.solved_challenges|length / challenges|length) * 100 %}
+                                            <div class="progress-bar bg-success" style="width: {{ user_progress }}%;"></div>
+                                        </div>
+                                    {% endif %}
+                                </td>
+                                <td class="text-muted small">
+                                    {{ user.registered_on.strftime('%Y-%m-%d') if user.registered_on else 'N/A' }}
+                                </td>
+                                <td class="text-muted small">
+                                    {{ user.last_login.strftime('%Y-%m-%d %H:%M') if user.last_login else 'Never' }}
+                                </td>
+                                <td>
+                                    {% if user.is_admin %}
+                                        <i class="fas fa-crown text-warning"></i>
+                                    {% else %}
+                                        <i class="fas fa-user text-muted"></i>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-primary" title="View Details">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        <button class="btn btn-outline-warning" title="Edit User">
+                                            <i class="fas fa-edit"></i>
+                                        </button>
+                                        {% if not user.is_admin %}
+                                        <button class="btn btn-outline-danger" title="Delete User">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Challenges & Recent Activity -->
+    <div class="col-lg-4">
+        <!-- Challenges Overview -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-flag me-2"></i>Challenges Overview</h5>
+            </div>
+            <div class="card-body">
+                {% for challenge in challenges %}
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <strong>Challenge {{ loop.index }}</strong>
+                        <br>
+                        <small class="text-muted">{{ challenge.secret_type }}</small>
+                    </div>
+                    <div>
+                        {% set challenge_solves = solves|selectattr('challenge_index', 'equalto', loop.index0)|list %}
+                        <span class="badge bg-info">{{ challenge_solves|length }} solves</span>
+                    </div>
+                </div>
+                {% if not loop.last %}
+                <hr class="my-2">
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        
+        <!-- Recent Activity -->
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-clock me-2"></i>Recent Solves</h5>
+            </div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush">
+                    {% for solve in solves|sort(attribute='solved_on', reverse=true)|list[:10] %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start">
+                            <div>
+                                <strong>{{ solve.user.username }}</strong>
+                                <br>
+                                <small class="text-muted">Challenge {{ solve.challenge_index + 1 }}</small>
+                            </div>
+                            <div class="text-end">
+                                <small class="text-success">
+                                    <i class="fas fa-check-circle"></i>
+                                </small>
+                                <br>
+                                <small class="text-muted">
+                                    {{ solve.solved_on.strftime('%m-%d %H:%M') if solve.solved_on else 'N/A' }}
+                                </small>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Challenge Details Modal (for future expansion) -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-list-alt me-2"></i>Challenge Details</h5>
+                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#challengeDetails">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+            </div>
+            <div class="card-body collapse" id="challengeDetails">
+                <div class="table-responsive">
+                    <table class="table table-striped">
+                        <thead>
+                            <tr>
+                                <th>Challenge #</th>
+                                <th>File Path</th>
+                                <th>Secret Type</th>
+                                <th>Total Solves</th>
+                                <th>Success Rate</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for challenge in challenges %}
+                            <tr>
+                                <td><span class="badge bg-primary">{{ loop.index }}</span></td>
+                                <td class="font-monospace small">{{ challenge.filepath }}</td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ challenge.secret_type }}</span>
+                                </td>
+                                <td>
+                                    {% set challenge_solves = solves|selectattr('challenge_index', 'equalto', loop.index0)|list %}
+                                    <span class="badge bg-success">{{ challenge_solves|length }}</span>
+                                </td>
+                                <td>
+                                    {% if users|length > 0 %}
+                                        {% set success_rate = (challenge_solves|length / users|length) * 100 %}
+                                        <div class="progress" style="height: 20px;">
+                                            <div class="progress-bar" style="width: {{ success_rate }}%;">
+                                                {{ "%.1f"|format(success_rate) }}%
+                                            </div>
+                                        </div>
+                                    {% else %}
+                                        <span class="text-muted">N/A</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-info" title="View Submissions">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions Footer -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card bg-light">
+            <div class="card-body text-center">
+                <h6 class="card-title">Quick Actions</h6>
+                <div class="btn-group" role="group">
+                    <button class="btn btn-outline-success">
+                        <i class="fas fa-download me-1"></i>Export Data
+                    </button>
+                    <button class="btn btn-outline-warning">
+                        <i class="fas fa-redo me-1"></i>Reset Challenges
+                    </button>
+                    <button class="btn btn-outline-info">
+                        <i class="fas fa-chart-bar me-1"></i>View Analytics
+                    </button>
+                    <button class="btn btn-outline-secondary">
+                        <i class="fas fa-cog me-1"></i>Settings
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.opacity-75 {
+    opacity: 0.75;
+}
+
+/* Dark theme compatibility overrides */
+.card {
+    background-color: #1e1e1e !important;
+    border-color: #333 !important;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.3);
+    transition: box-shadow 0.15s ease-in-out;
+}
+
+.card:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.5);
+}
+
+.card-header {
+    background-color: #2a2a2a !important;
+    border-bottom-color: #444 !important;
+    color: #e0e0e0 !important;
+}
+
+.table {
+    color: #e0e0e0 !important;
+}
+
+.table-light {
+    background-color: #2a2a2a !important;
+    color: #e0e0e0 !important;
+}
+
+.table-striped > tbody > tr:nth-of-type(odd) > td {
+    background-color: #252525 !important;
+}
+
+.badge {
+    font-weight: 500;
+}
+
+.progress {
+    background-color: #333 !important;
+}
+
+.table th {
+    border-top: none;
+    font-weight: 600;
+    font-size: 0.875rem;
+    border-bottom-color: #444 !important;
+}
+
+.table td {
+    border-bottom-color: #444 !important;
+}
+
+.btn-group-sm > .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.list-group-item {
+    background-color: #1e1e1e !important;
+    border-color: #444 !important;
+    color: #e0e0e0 !important;
+}
+
+.list-group-item:last-child {
+    border-bottom: none;
+}
+
+.bg-light {
+    background-color: #2a2a2a !important;
+}
+
+.text-muted {
+    color: #6c757d !important;
+}
+
+/* Stats cards dark theme */
+.bg-primary {
+    background-color: #0d6efd !important;
+}
+
+.bg-success {
+    background-color: #198754 !important;
+}
+
+.bg-info {
+    background-color: #0dcaf0 !important;
+}
+
+.bg-warning {
+    background-color: #ffc107 !important;
+}
+</style>
+
+<script>
+// Add some interactivity
+document.addEventListener('DOMContentLoaded', function() {
+    // Auto-refresh recent activity every 30 seconds
+    setInterval(function() {
+        // You can add AJAX call here to refresh recent solves
+        console.log('Refreshing recent activity...');
+    }, 30000);
+    
+    // Add confirmation for destructive actions
+    document.querySelectorAll('.btn-outline-danger').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+            if (!confirm('Are you sure you want to perform this action?')) {
+                e.preventDefault();
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
