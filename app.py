@@ -406,31 +406,36 @@ def admin():
     total_users = len(users)
     active_users = len(set(solve.user_id for solve in solves))
     
-    # Enhanced challenge data with proper details - ensure all fields are captured
+    # Enhanced challenge data - directly use the flag_mappings data
     enhanced_challenges = []
     for i, challenge in enumerate(flag_mappings):
         challenge_solves = [s for s in solves if s.challenge_index == i]
         success_rate = (len(challenge_solves) / total_users * 100) if total_users > 0 else 0
         
-        # Ensure all fields are present with fallbacks
+        # Use the actual data from flag_mappings (which debug shows is correct)
         enhanced_challenge = {
             'index': i,
-            'filepath': challenge.get('filepath', f'Challenge {i+1}'),
-            'secret_type': challenge.get('secret_type', 'unknown'),
-            'old_secret': challenge.get('old_secret', 'N/A'),
-            'challenge_name': challenge.get('challenge_name', f'Challenge {i+1}'),
+            'filepath': challenge['filepath'],  # Direct access, no .get()
+            'secret_type': challenge['secret_type'],  # Direct access
+            'old_secret': challenge['old_secret'],  # Direct access
+            'challenge_name': challenge['challenge_name'],  # Direct access
             'description': get_challenge_description(i),
             'solves': len(challenge_solves),
             'success_rate': round(success_rate, 1)
         }
         
         enhanced_challenges.append(enhanced_challenge)
-        print(f"Enhanced challenge {i}: {enhanced_challenge}")  # Debug output
+    
+    # Debug print to verify data structure
+    print("=== ADMIN ROUTE DEBUG ===")
+    for i, challenge in enumerate(enhanced_challenges):
+        print(f"Challenge {i}: filepath='{challenge['filepath']}', secret_type='{challenge['secret_type']}', old_secret='{challenge['old_secret'][:20]}...'")
+    print("=== END DEBUG ===")
     
     return render_template(
         'admin.html', 
         users=users, 
-        challenges=enhanced_challenges, 
+        challenges=enhanced_challenges,  # This should now have all data
         solves=solves,
         total_users=total_users,
         active_users=active_users,

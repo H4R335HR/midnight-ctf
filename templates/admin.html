@@ -263,23 +263,20 @@
                         </thead>
                         <tbody>
                             {% for challenge in challenges %}
+                            <!-- Debug: {{ challenge }} -->
                             <tr>
                                 <td><span class="badge bg-primary">{{ challenge.index + 1 }}</span></td>
                                 <td>
                                     <strong>{{ challenge.description }}</strong>
                                 </td>
                                 <td class="font-monospace small">
-                                    {{ challenge.filepath if challenge.filepath and challenge.filepath != 'N/A' else 'N/A' }}
+                                    {{ challenge.filepath if challenge.filepath else 'N/A' }}
                                 </td>
                                 <td>
                                     <span class="badge bg-secondary">{{ challenge.secret_type }}</span>
                                 </td>
                                 <td class="font-monospace small" style="max-width: 200px; word-wrap: break-word;">
-                                    {% if challenge.old_secret and challenge.old_secret != 'N/A' %}
-                                        <span title="{{ challenge.old_secret }}">{{ challenge.old_secret }}</span>
-                                    {% else %}
-                                        N/A
-                                    {% endif %}
+                                    <span title="{{ challenge.old_secret }}">{{ challenge.old_secret }}</span>
                                 </td>
                                 <td>
                                     <span class="badge bg-success">{{ challenge.solves }}</span>
