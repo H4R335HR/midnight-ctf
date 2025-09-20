@@ -21,7 +21,7 @@
                     {% for entry in scoreboard %}
                     <tr>
                         <td>{{ entry.rank }}</td>
-                        <td>{{ entry.email }}</td>
+                        <td>{{ entry.username }}</td>
                         <td>
                             <div class="progress" style="height: 20px;">
                                 {% set progress = (entry.solved / total_challenges) * 100 %}

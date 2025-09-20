@@ -8,7 +8,7 @@ from flask import Flask, request, render_template, redirect, url_for, flash, ses
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField
-from wtforms.validators import DataRequired, Email, ValidationError
+from wtforms.validators import DataRequired, Email, ValidationError, Length
 from datetime import datetime
 from functools import wraps
 
@@ -41,6 +41,7 @@ with open(MAPPING_FILE, 'r') as f:
 # Models
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(128), nullable=False)
     registered_on = db.Column(db.DateTime, default=datetime.utcnow)
@@ -71,9 +72,21 @@ class LoginForm(FlaskForm):
 
 
 class RegisterForm(FlaskForm):
+    username = StringField('Username', validators=[
+        DataRequired(), 
+        Length(min=3, max=20, message="Username must be between 3 and 20 characters")
+    ])
     email = StringField('Email', validators=[DataRequired(), Email()])
-    password = PasswordField('Password', validators=[DataRequired()])
+    password = PasswordField('Password', validators=[
+        DataRequired(),
+        Length(min=6, message="Password must be at least 6 characters")
+    ])
     submit = SubmitField('Register')
+    
+    def validate_username(self, username):
+        user = User.query.filter_by(username=username.data).first()
+        if user:
+            raise ValidationError('Username already taken. Please choose a different one.')
     
     def validate_email(self, email):
         user = User.query.filter_by(email=email.data).first()
@@ -156,7 +169,10 @@ def register():
     
     form = RegisterForm()
     if form.validate_on_submit():
-        user = User(email=form.email.data)
+        user = User(
+            username=form.username.data,
+            email=form.email.data
+        )
         user.set_password(form.password.data)
         db.session.add(user)
         db.session.commit()
@@ -176,10 +192,11 @@ def login():
         user = User.query.filter_by(email=form.email.data).first()
         if user and user.check_password(form.password.data):
             session['user_id'] = user.id
-            session['email'] = user.email
+            session['email'] = user.email  # Keep email for flag generation
+            session['username'] = user.username  # Add username for display
             user.last_login = datetime.utcnow()
             db.session.commit()
-            flash('Login successful!', 'success')
+            flash(f'Welcome back, {user.username}!', 'success')
             return redirect(url_for('challenges'))
         else:
             flash('Invalid email or password', 'danger')
@@ -277,7 +294,8 @@ def challenge(challenge_id):
     form = FlagSubmissionForm()
     if form.validate_on_submit():
         submitted_flag = form.flag.data.strip()
-        expected_flag = generate_expected_flag_for_challenge(challenge_id, user.email)
+        # Use email from session for flag generation (keeps compatibility)
+        expected_flag = generate_expected_flag_for_challenge(challenge_id, session['email'])
         
         if submitted_flag == expected_flag:
             if not solved:
@@ -310,7 +328,7 @@ def challenge(challenge_id):
 
 @app.route('/scoreboard')
 def scoreboard():
-    # Group users by email and count their solved challenges
+    # Group users by username and count their solved challenges
     users_with_solves = db.session.query(
         User, 
         db.func.count(SolvedChallenge.id).label('solved_count')
@@ -324,7 +342,7 @@ def scoreboard():
     for i, (user, solved_count) in enumerate(users_with_solves, 1):
         scoreboard_data.append({
             'rank': i,
-            'email': user.email,
+            'username': user.username,  # Changed from email to username
             'solved': solved_count,
             'last_solve': max([sc.solved_on for sc in user.solved_challenges]) if user.solved_challenges else None
         })
@@ -354,4 +372,3 @@ if __name__ == '__main__':
     with app.app_context():
         db.create_all()
     app.run(debug=True, host='0.0.0.0')
-
