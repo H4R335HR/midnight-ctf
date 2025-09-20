@@ -14,7 +14,7 @@
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title">Total Users</h5>
-                        <h2 class="mb-0">{{ users|length }}</h2>
+                        <h2 class="mb-0" id="total-users">{{ total_users }}</h2>
                     </div>
                     <div class="align-self-center">
                         <i class="fas fa-users fa-2x opacity-75"></i>
@@ -46,7 +46,7 @@
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title">Total Solves</h5>
-                        <h2 class="mb-0">{{ solves|length }}</h2>
+                        <h2 class="mb-0" id="total-solves">{{ solves|length }}</h2>
                     </div>
                     <div class="align-self-center">
                         <i class="fas fa-check-circle fa-2x opacity-75"></i>
@@ -62,10 +62,7 @@
                 <div class="d-flex justify-content-between">
                     <div>
                         <h5 class="card-title">Active Players</h5>
-                        <h2 class="mb-0">
-                            {% set active_users = users|selectattr('solved_challenges')|list %}
-                            {{ active_users|length }}
-                        </h2>
+                        <h2 class="mb-0" id="active-players">{{ active_users }}</h2>
                     </div>
                     <div class="align-self-center">
                         <i class="fas fa-user-check fa-2x opacity-75"></i>
@@ -89,7 +86,7 @@
             </div>
             <div class="card-body p-0 collapse show" id="usersTable">
                 <div class="table-responsive">
-                    <table class="table table-hover mb-0">
+                    <table class="table table-hover mb-0" id="users-table">
                         <thead class="table-light">
                             <tr>
                                 <th>ID</th>
@@ -104,7 +101,7 @@
                         </thead>
                         <tbody>
                             {% for user in users %}
-                            <tr>
+                            <tr id="user-{{ user.id }}">
                                 <td><span class="badge bg-secondary">{{ user.id }}</span></td>
                                 <td>
                                     <strong>{{ user.username }}</strong>
@@ -141,16 +138,18 @@
                                 </td>
                                 <td>
                                     <div class="btn-group btn-group-sm">
-                                        <button class="btn btn-outline-primary" title="View Details">
+                                        <button class="btn btn-outline-primary" onclick="viewUserDetails({{ user.id }})" title="View Details">
                                             <i class="fas fa-eye"></i>
                                         </button>
-                                        <button class="btn btn-outline-warning" title="Edit User">
-                                            <i class="fas fa-edit"></i>
+                                        {% if user.id != session.get('user_id') %}
+                                        <button class="btn btn-outline-warning" onclick="toggleAdmin({{ user.id }})" title="Toggle Admin">
+                                            <i class="fas fa-user-cog"></i>
                                         </button>
                                         {% if not user.is_admin %}
-                                        <button class="btn btn-outline-danger" title="Delete User">
+                                        <button class="btn btn-outline-danger" onclick="deleteUser({{ user.id }})" title="Delete User">
                                             <i class="fas fa-trash"></i>
                                         </button>
+                                        {% endif %}
                                         {% endif %}
                                     </div>
                                 </td>
@@ -174,13 +173,14 @@
                 {% for challenge in challenges %}
                 <div class="d-flex justify-content-between align-items-center mb-3">
                     <div>
-                        <strong>Challenge {{ loop.index }}</strong>
+                        <strong>Challenge {{ challenge.index + 1 }}</strong>
                         <br>
                         <small class="text-muted">{{ challenge.secret_type }}</small>
                     </div>
                     <div>
-                        {% set challenge_solves = solves|selectattr('challenge_index', 'equalto', loop.index0)|list %}
-                        <span class="badge bg-info">{{ challenge_solves|length }} solves</span>
+                        <span class="badge bg-info">{{ challenge.solves }} solves</span>
+                        <br>
+                        <small class="text-muted">{{ challenge.success_rate }}%</small>
                     </div>
                 </div>
                 {% if not loop.last %}
@@ -192,11 +192,14 @@
         
         <!-- Recent Activity -->
         <div class="card">
-            <div class="card-header">
+            <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="fas fa-clock me-2"></i>Recent Solves</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="refreshActivity()" title="Refresh">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
             </div>
             <div class="card-body p-0">
-                <div class="list-group list-group-flush">
+                <div class="list-group list-group-flush" id="recent-activity">
                     {% for solve in solves|sort(attribute='solved_on', reverse=true) %}
                     {% if loop.index <= 10 %}
                     <div class="list-group-item">
@@ -225,7 +228,7 @@
     </div>
 </div>
 
-<!-- Challenge Details Modal (for future expansion) -->
+<!-- Enhanced Challenge Details -->
 <div class="row mt-4">
     <div class="col-12">
         <div class="card">
@@ -235,14 +238,16 @@
                     <i class="fas fa-chevron-down"></i>
                 </button>
             </div>
-            <div class="card-body collapse" id="challengeDetails">
+            <div class="card-body collapse show" id="challengeDetails">
                 <div class="table-responsive">
                     <table class="table table-striped">
                         <thead>
                             <tr>
                                 <th>Challenge #</th>
+                                <th>Description</th>
                                 <th>File Path</th>
                                 <th>Secret Type</th>
+                                <th>Old Secret (Preview)</th>
                                 <th>Total Solves</th>
                                 <th>Success Rate</th>
                                 <th>Actions</th>
@@ -251,21 +256,31 @@
                         <tbody>
                             {% for challenge in challenges %}
                             <tr>
-                                <td><span class="badge bg-primary">{{ loop.index }}</span></td>
-                                <td class="font-monospace small">{{ challenge.filepath }}</td>
+                                <td><span class="badge bg-primary">{{ challenge.index + 1 }}</span></td>
+                                <td>
+                                    <strong>{{ challenge.description }}</strong>
+                                </td>
+                                <td class="font-monospace small">
+                                    {{ challenge.filepath if challenge.filepath != 'Challenge ' + (challenge.index + 1)|string else 'N/A' }}
+                                </td>
                                 <td>
                                     <span class="badge bg-secondary">{{ challenge.secret_type }}</span>
                                 </td>
-                                <td>
-                                    {% set challenge_solves = solves|selectattr('challenge_index', 'equalto', loop.index0)|list %}
-                                    <span class="badge bg-success">{{ challenge_solves|length }}</span>
+                                <td class="font-monospace small">
+                                    {% if challenge.old_secret %}
+                                        {{ challenge.old_secret[:20] }}{% if challenge.old_secret|length > 20 %}...{% endif %}
+                                    {% else %}
+                                        N/A
+                                    {% endif %}
                                 </td>
                                 <td>
-                                    {% if users|length > 0 %}
-                                        {% set success_rate = (challenge_solves|length / users|length) * 100 %}
+                                    <span class="badge bg-success">{{ challenge.solves }}</span>
+                                </td>
+                                <td>
+                                    {% if total_users > 0 %}
                                         <div class="progress" style="height: 20px;">
-                                            <div class="progress-bar" style="width: {{ success_rate }}%;">
-                                                {{ "%.1f"|format(success_rate) }}%
+                                            <div class="progress-bar" style="width: {{ challenge.success_rate }}%;">
+                                                {{ challenge.success_rate }}%
                                             </div>
                                         </div>
                                     {% else %}
@@ -273,7 +288,7 @@
                                     {% endif %}
                                 </td>
                                 <td>
-                                    <button class="btn btn-sm btn-outline-info" title="View Submissions">
+                                    <button class="btn btn-sm btn-outline-info" onclick="viewChallengeDetails({{ challenge.index }})" title="View Submissions">
                                         <i class="fas fa-eye"></i>
                                     </button>
                                 </td>
@@ -287,26 +302,62 @@
     </div>
 </div>
 
-<!-- Quick Actions Footer -->
+<!-- Functional Quick Actions -->
 <div class="row mt-4">
     <div class="col-12">
         <div class="card bg-light">
             <div class="card-body text-center">
                 <h6 class="card-title">Quick Actions</h6>
                 <div class="btn-group" role="group">
-                    <button class="btn btn-outline-success">
-                        <i class="fas fa-download me-1"></i>Export Data
-                    </button>
-                    <button class="btn btn-outline-warning">
+                    <div class="btn-group" role="group">
+                        <button class="btn btn-outline-success dropdown-toggle" data-bs-toggle="dropdown">
+                            <i class="fas fa-download me-1"></i>Export Data
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" onclick="exportData('users')">Export Users</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="exportData('solves')">Export Solves</a></li>
+                        </ul>
+                    </div>
+                    <button class="btn btn-outline-warning" onclick="resetChallenges()">
                         <i class="fas fa-redo me-1"></i>Reset Challenges
                     </button>
-                    <button class="btn btn-outline-info">
+                    <button class="btn btn-outline-info" onclick="viewAnalytics()">
                         <i class="fas fa-chart-bar me-1"></i>View Analytics
                     </button>
-                    <button class="btn btn-outline-secondary">
-                        <i class="fas fa-cog me-1"></i>Settings
+                    <button class="btn btn-outline-secondary" onclick="refreshDashboard()">
+                        <i class="fas fa-sync-alt me-1"></i>Refresh
                     </button>
                 </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- User Details Modal -->
+<div class="modal fade" id="userDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">User Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="userDetailsContent">
+                <!-- Content loaded dynamically -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Analytics Modal -->
+<div class="modal fade" id="analyticsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">CTF Analytics</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="analyticsContent">
+                <!-- Content loaded dynamically -->
             </div>
         </div>
     </div>
@@ -390,40 +441,324 @@
     color: #6c757d !important;
 }
 
-/* Stats cards dark theme */
-.bg-primary {
-    background-color: #0d6efd !important;
+.modal-content {
+    background-color: #1e1e1e !important;
+    border-color: #333 !important;
 }
 
-.bg-success {
-    background-color: #198754 !important;
+.modal-header {
+    border-bottom-color: #444 !important;
 }
 
-.bg-info {
-    background-color: #0dcaf0 !important;
+.dropdown-menu {
+    background-color: #2a2a2a !important;
+    border-color: #444 !important;
 }
 
-.bg-warning {
-    background-color: #ffc107 !important;
+.dropdown-item {
+    color: #e0e0e0 !important;
+}
+
+.dropdown-item:hover {
+    background-color: #333 !important;
+    color: #fff !important;
 }
 </style>
 
 <script>
-// Add some interactivity
-document.addEventListener('DOMContentLoaded', function() {
-    // Auto-refresh recent activity every 30 seconds
-    setInterval(function() {
-        // You can add AJAX call here to refresh recent solves
-        console.log('Refreshing recent activity...');
-    }, 30000);
-    
-    // Add confirmation for destructive actions
-    document.querySelectorAll('.btn-outline-danger').forEach(function(btn) {
-        btn.addEventListener('click', function(e) {
-            if (!confirm('Are you sure you want to perform this action?')) {
-                e.preventDefault();
+// JavaScript functions for admin functionality
+function exportData(type) {
+    window.open(`/admin/export?type=${type}`, '_blank');
+}
+
+function toggleAdmin(userId) {
+    if (confirm('Are you sure you want to toggle admin status for this user?')) {
+        fetch(`/admin/user/${userId}/toggle_admin`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
             }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', data.message);
+                refreshDashboard();
+            } else {
+                showAlert('danger', data.error);
+            }
+        })
+        .catch(error => {
+            showAlert('danger', 'An error occurred');
+            console.error(error);
         });
+    }
+}
+
+function deleteUser(userId) {
+    if (confirm('Are you sure you want to delete this user? This action cannot be undone!')) {
+        fetch(`/admin/user/${userId}/delete`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', data.message);
+                document.getElementById(`user-${userId}`).remove();
+                refreshStats();
+            } else {
+                showAlert('danger', data.error);
+            }
+        })
+        .catch(error => {
+            showAlert('danger', 'An error occurred');
+            console.error(error);
+        });
+    }
+}
+
+function resetChallenges() {
+    if (confirm('Are you sure you want to reset ALL challenge progress? This will delete all solved challenges for all users!')) {
+        fetch('/admin/reset_challenges', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', data.message);
+                refreshDashboard();
+            } else {
+                showAlert('danger', data.error);
+            }
+        })
+        .catch(error => {
+            showAlert('danger', 'An error occurred');
+            console.error(error);
+        });
+    }
+}
+
+function viewUserDetails(userId) {
+    fetch(`/admin/user/${userId}/details`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.user) {
+                const content = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>User Information</h6>
+                            <table class="table table-sm">
+                                <tr><td><strong>ID:</strong></td><td>${data.user.id}</td></tr>
+                                <tr><td><strong>Username:</strong></td><td>${data.user.username}</td></tr>
+                                <tr><td><strong>Email:</strong></td><td>${data.user.email}</td></tr>
+                                <tr><td><strong>Registered:</strong></td><td>${data.user.registered_on}</td></tr>
+                                <tr><td><strong>Last Login:</strong></td><td>${data.user.last_login}</td></tr>
+                                <tr><td><strong>Admin:</strong></td><td>${data.user.is_admin ? 'Yes' : 'No'}</td></tr>
+                                <tr><td><strong>Total Solves:</strong></td><td>${data.user.total_solves}</td></tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Solved Challenges</h6>
+                            <div style="max-height: 300px; overflow-y: auto;">
+                                ${data.solved_challenges.map(solve => `
+                                    <div class="mb-2 p-2 border rounded">
+                                        <strong>Challenge ${solve.challenge_index + 1}:</strong> ${solve.challenge_name}<br>
+                                        <small class="text-muted">Solved: ${solve.solved_on}</small><br>
+                                        <small class="font-monospace">${solve.flag_submitted}</small>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('userDetailsContent').innerHTML = content;
+                new bootstrap.Modal(document.getElementById('userDetailsModal')).show();
+            }
+        })
+        .catch(error => {
+            showAlert('danger', 'Failed to load user details');
+            console.error(error);
+        });
+}
+
+function viewAnalytics() {
+    fetch('/admin/stats')
+        .then(response => response.json())
+        .then(data => {
+            const content = `
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <h6>Overview Statistics</h6>
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="card bg-primary text-white text-center">
+                                    <div class="card-body">
+                                        <h5>${data.overview.total_users}</h5>
+                                        <small>Total Users</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-success text-white text-center">
+                                    <div class="card-body">
+                                        <h5>${data.overview.active_users}</h5>
+                                        <small>Active Users</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-info text-white text-center">
+                                    <div class="card-body">
+                                        <h5>${data.overview.total_solves}</h5>
+                                        <small>Total Solves</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-warning text-white text-center">
+                                    <div class="card-body">
+                                        <h5>${data.overview.avg_solves_per_user}</h5>
+                                        <small>Avg Solves/User</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Challenge Performance</h6>
+                        <div style="max-height: 400px; overflow-y: auto;">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Challenge</th>
+                                        <th>Solves</th>
+                                        <th>Success Rate</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.challenge_stats.map(challenge => `
+                                        <tr>
+                                            <td>Challenge ${challenge.index + 1}</td>
+                                            <td><span class="badge bg-info">${challenge.solves}</span></td>
+                                            <td>
+                                                <div class="progress" style="height: 20px;">
+                                                    <div class="progress-bar" style="width: ${challenge.success_rate}%;">${challenge.success_rate}%</div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <h6>Top Performers</h6>
+                        <div style="max-height: 400px; overflow-y: auto;">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Solves</th>
+                                        <th>Completion</th>
+                                        <th>Last Solve</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.top_performers.map(user => `
+                                        <tr>
+                                            <td><strong>${user.username}</strong></td>
+                                            <td><span class="badge bg-success">${user.solve_count}</span></td>
+                                            <td>${user.completion_rate}%</td>
+                                            <td><small>${user.last_solve}</small></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('analyticsContent').innerHTML = content;
+            new bootstrap.Modal(document.getElementById('analyticsModal')).show();
+        })
+        .catch(error => {
+            showAlert('danger', 'Failed to load analytics');
+            console.error(error);
+        });
+}
+
+function refreshActivity() {
+    // Simple refresh for now - in production you'd make an AJAX call
+    showAlert('info', 'Refreshing activity...');
+    setTimeout(() => {
+        location.reload();
+    }, 1000);
+}
+
+function refreshDashboard() {
+    showAlert('info', 'Refreshing dashboard...');
+    setTimeout(() => {
+        location.reload();
+    }, 1000);
+}
+
+function refreshStats() {
+    // Update the stat cards
+    fetch('/admin/stats')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('total-users').textContent = data.overview.total_users;
+            document.getElementById('active-players').textContent = data.overview.active_users;
+            document.getElementById('total-solves').textContent = data.overview.total_solves;
+        })
+        .catch(error => console.error(error));
+}
+
+function showAlert(type, message) {
+    // Create and show Bootstrap alert
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    // Insert at the top of the container
+    const container = document.querySelector('.container');
+    container.insertBefore(alertDiv, container.firstChild);
+    
+    // Auto-remove after 5 seconds
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 5000);
+}
+
+function viewChallengeDetails(challengeIndex) {
+    showAlert('info', `Viewing details for Challenge ${challengeIndex + 1}`);
+    // This could be expanded to show detailed submission history, etc.
+}
+
+// Auto-refresh dashboard every 5 minutes
+setInterval(refreshStats, 300000);
+
+// Add confirmation for destructive actions
+document.addEventListener('DOMContentLoaded', function() {
+    // Add hover effects and tooltips
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[title]'));
+    const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
     });
 });
 </script>
