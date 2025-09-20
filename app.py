@@ -45,6 +45,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(128), nullable=False)
     registered_on = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime, default=datetime.utcnow)
+    is_admin = db.Column(db.Boolean, default=False, nullable=False)
     solved_challenges = db.relationship('SolvedChallenge', backref='user', lazy=True)
     
     def set_password(self, password):
@@ -337,8 +338,8 @@ def scoreboard():
 @app.route('/admin')
 @login_required
 def admin():
-    # Only for demonstration - in production, add proper admin authentication
-    if not session.get('email').endswith('@admin.ctf'):
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
         flash('Unauthorized access', 'danger')
         return redirect(url_for('challenges'))
     
