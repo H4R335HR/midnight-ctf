@@ -159,39 +159,7 @@ def generate_expected_flag_for_challenge(challenge_index, email):
     
     return None
 
-# Improved flag mapping loader - add this right after the existing mapping loading code
-def reload_flag_mappings():
-    """Reload flag mappings with better error handling"""
-    global flag_mappings
-    flag_mappings = []
-    
-    try:
-        with open(MAPPING_FILE, 'r') as f:
-            for line_num, line in enumerate(f, 1):
-                line = line.strip()
-                if not line or line.startswith('#'):  # Skip empty lines and comments
-                    continue
-                    
-                parts = line.split('|')
-                if len(parts) >= 3:
-                    filepath, old_secret, secret_type = parts[0], parts[1], parts[2]
-                    
-                    # Create mapping with all fields always present
-                    mapping = {
-                        'filepath': filepath.strip() if filepath.strip() else f'Challenge_{line_num}',
-                        'old_secret': old_secret.strip() if old_secret.strip() else 'N/A',
-                        'secret_type': secret_type.strip() if secret_type.strip() else 'unknown',
-                        'challenge_name': os.path.basename(filepath).replace('_', ' ').title() if filepath.strip() else f'Challenge {line_num}'
-                    }
-                    flag_mappings.append(mapping)
-                    print(f"Loaded mapping {line_num}: {mapping}")  # Debug output
-                else:
-                    print(f"Warning: Line {line_num} in {MAPPING_FILE} has insufficient parts: {parts}")
-                    
-    except FileNotFoundError:
-        print(f"Warning: Mapping file {MAPPING_FILE} not found")
-    except Exception as e:
-        print(f"Error loading mappings: {e}")
+
 
 
 # Routes
@@ -402,23 +370,22 @@ def admin():
     users = User.query.all()
     solves = SolvedChallenge.query.order_by(SolvedChallenge.solved_on.desc()).all()
     
-    # Calculate additional stats for the template
+    # Calculate stats
     total_users = len(users)
     active_users = len(set(solve.user_id for solve in solves))
     
-    # Enhanced challenge data - directly use the flag_mappings data
+    # Process challenge data
     enhanced_challenges = []
     for i, challenge in enumerate(flag_mappings):
         challenge_solves = [s for s in solves if s.challenge_index == i]
         success_rate = (len(challenge_solves) / total_users * 100) if total_users > 0 else 0
         
-        # Use the actual data from flag_mappings (which debug shows is correct)
         enhanced_challenge = {
             'index': i,
-            'filepath': challenge['filepath'],  # Direct access, no .get()
-            'secret_type': challenge['secret_type'],  # Direct access
-            'old_secret': challenge['old_secret'],  # Direct access
-            'challenge_name': challenge['challenge_name'],  # Direct access
+            'filepath': challenge['filepath'],
+            'secret_type': challenge['secret_type'],
+            'old_secret': challenge['old_secret'],
+            'challenge_name': challenge['challenge_name'],
             'description': get_challenge_description(i),
             'solves': len(challenge_solves),
             'success_rate': round(success_rate, 1)
@@ -426,62 +393,15 @@ def admin():
         
         enhanced_challenges.append(enhanced_challenge)
     
-    # Debug print to verify data structure
-    print("=== ADMIN ROUTE DEBUG ===")
-    for i, challenge in enumerate(enhanced_challenges):
-        print(f"Challenge {i}: filepath='{challenge['filepath']}', secret_type='{challenge['secret_type']}', old_secret='{challenge['old_secret'][:20]}...'")
-    print("=== END DEBUG ===")
-    
     return render_template(
         'admin.html', 
         users=users, 
-        challenges=enhanced_challenges,  # This should now have all data
+        challenges=enhanced_challenges,
         solves=solves,
         total_users=total_users,
-        active_users=active_users,
-        flag_mappings=flag_mappings  # Keep original for compatibility
+        active_users=active_users
     )
 
-
-# Add this route to manually refresh mappings if needed
-@app.route('/admin/refresh_mappings', methods=['POST'])
-@login_required
-def refresh_mappings():
-    user = User.query.get(session['user_id'])
-    if not user.is_admin:
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    reload_flag_mappings()
-    return jsonify({
-        'success': True, 
-        'message': f'Reloaded {len(flag_mappings)} challenge mappings',
-        'mappings_count': len(flag_mappings)
-    })
-
-@app.route('/admin/debug')
-@login_required
-def admin_debug():
-    user = User.query.get(session['user_id'])
-    if not user.is_admin:
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    debug_info = {
-        'mapping_file': MAPPING_FILE,
-        'flag_mappings_count': len(flag_mappings),
-        'flag_mappings_details': []
-    }
-    
-    for i, mapping in enumerate(flag_mappings):
-        debug_info['flag_mappings_details'].append({
-            'index': i,
-            'mapping_data': mapping,
-            'mapping_keys': list(mapping.keys()) if isinstance(mapping, dict) else 'Not a dict',
-            'filepath_value': mapping.get('filepath', 'MISSING') if isinstance(mapping, dict) else 'N/A',
-            'old_secret_value': mapping.get('old_secret', 'MISSING') if isinstance(mapping, dict) else 'N/A',
-            'secret_type_value': mapping.get('secret_type', 'MISSING') if isinstance(mapping, dict) else 'N/A'
-        })
-    
-    return jsonify(debug_info)
 
 @app.route('/admin/export')
 @login_required

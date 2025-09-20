@@ -228,23 +228,15 @@
     </div>
 </div>
 
-<!-- Enhanced Challenge Details -->
+<!-- Challenge Details -->
 <div class="row mt-4">
     <div class="col-12">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <h5 class="mb-0"><i class="fas fa-list-alt me-2"></i>Challenge Details</h5>
-                <div>
-                    <button class="btn btn-sm btn-outline-secondary me-2" onclick="refreshMappings()" title="Refresh Challenge Data">
-                        <i class="fas fa-sync-alt"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-info me-2" onclick="debugMappings()" title="Debug Mappings">
-                        <i class="fas fa-bug"></i>
-                    </button>
-                    <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#challengeDetails">
-                        <i class="fas fa-chevron-down"></i>
-                    </button>
-                </div>
+                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#challengeDetails">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
             </div>
             <div class="card-body collapse show" id="challengeDetails">
                 <div class="table-responsive">
@@ -255,7 +247,7 @@
                                 <th>Description</th>
                                 <th>File Path</th>
                                 <th>Secret Type</th>
-                                <th>Old Secret (Preview)</th>
+                                <th>Original Secret</th>
                                 <th>Total Solves</th>
                                 <th>Success Rate</th>
                                 <th>Actions</th>
@@ -263,14 +255,13 @@
                         </thead>
                         <tbody>
                             {% for challenge in challenges %}
-                            <!-- Debug: {{ challenge }} -->
                             <tr>
                                 <td><span class="badge bg-primary">{{ challenge.index + 1 }}</span></td>
                                 <td>
                                     <strong>{{ challenge.description }}</strong>
                                 </td>
                                 <td class="font-monospace small">
-                                    {{ challenge.filepath if challenge.filepath else 'N/A' }}
+                                    {{ challenge.filepath }}
                                 </td>
                                 <td>
                                     <span class="badge bg-secondary">{{ challenge.secret_type }}</span>
@@ -307,7 +298,7 @@
     </div>
 </div>
 
-<!-- Functional Quick Actions -->
+<!-- Quick Actions -->
 <div class="row mt-4">
     <div class="col-12">
         <div class="card bg-light">
@@ -373,7 +364,7 @@
     opacity: 0.75;
 }
 
-/* Dark theme compatibility overrides */
+/* Dark theme compatibility */
 .card {
     background-color: #1e1e1e !important;
     border-color: #333 !important;
@@ -702,102 +693,11 @@ function viewAnalytics() {
         });
 }
 
-function refreshMappings() {
-    fetch('/admin/refresh_mappings', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.success) {
-            showAlert('success', data.message);
-            setTimeout(() => {
-                location.reload();
-            }, 1500);
-        } else {
-            showAlert('danger', data.error || 'Failed to refresh mappings');
-        }
-    })
-    .catch(error => {
-        showAlert('danger', 'An error occurred while refreshing mappings');
-        console.error(error);
-    });
-}
-
-function debugMappings() {
-    fetch('/admin/debug')
-        .then(response => response.json())
-        .then(data => {
-            console.log('Debug data:', data);
-            const content = `
-                <div class="row">
-                    <div class="col-12">
-                        <h6>Mapping File Debug Information</h6>
-                        <table class="table table-sm">
-                            <tr><td><strong>Mapping File:</strong></td><td>${data.mapping_file}</td></tr>
-                            <tr><td><strong>Total Mappings:</strong></td><td>${data.flag_mappings_count}</td></tr>
-                        </table>
-                        
-                        <h6 class="mt-4">Individual Mapping Details</h6>
-                        <div style="max-height: 400px; overflow-y: auto;">
-                            <table class="table table-striped table-sm">
-                                <thead>
-                                    <tr>
-                                        <th>Index</th>
-                                        <th>Keys Available</th>
-                                        <th>Filepath</th>
-                                        <th>Old Secret</th>
-                                        <th>Secret Type</th>
-                                        <th>Raw Data</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    ${data.flag_mappings_details.map(mapping => `
-                                        <tr>
-                                            <td><span class="badge bg-primary">${mapping.index}</span></td>
-                                            <td><small>${Array.isArray(mapping.mapping_keys) ? mapping.mapping_keys.join(', ') : mapping.mapping_keys}</small></td>
-                                            <td><small>${mapping.filepath_value}</small></td>
-                                            <td><small>${mapping.old_secret_value.length > 30 ? mapping.old_secret_value.substring(0, 30) + '...' : mapping.old_secret_value}</small></td>
-                                            <td><span class="badge bg-secondary">${mapping.secret_type_value}</span></td>
-                                            <td><small class="font-monospace">${JSON.stringify(mapping.mapping_data).substring(0, 50)}...</small></td>
-                                        </tr>
-                                    `).join('')}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            `;
-            
-            // Create or update debug modal
-            let debugModal = document.getElementById('debugModal');
-            if (!debugModal) {
-                debugModal = document.createElement('div');
-                debugModal.innerHTML = `
-                    <div class="modal fade" id="debugModal" tabindex="-1">
-                        <div class="modal-dialog modal-xl">
-                            <div class="modal-content">
-                                <div class="modal-header">
-                                    <h5 class="modal-title">Debug Information</h5>
-                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                                </div>
-                                <div class="modal-body" id="debugContent"></div>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                document.body.appendChild(debugModal);
-            }
-            
-            document.getElementById('debugContent').innerHTML = content;
-            new bootstrap.Modal(document.getElementById('debugModal')).show();
-        })
-        .catch(error => {
-            showAlert('danger', 'Failed to load debug information');
-            console.error(error);
-        });
+function refreshActivity() {
+    showAlert('info', 'Refreshing activity...');
+    setTimeout(() => {
+        location.reload();
+    }, 1000);
 }
 
 function refreshDashboard() {
@@ -808,7 +708,6 @@ function refreshDashboard() {
 }
 
 function refreshStats() {
-    // Update the stat cards
     fetch('/admin/stats')
         .then(response => response.json())
         .then(data => {
@@ -820,7 +719,6 @@ function refreshStats() {
 }
 
 function showAlert(type, message) {
-    // Create and show Bootstrap alert
     const alertDiv = document.createElement('div');
     alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
     alertDiv.innerHTML = `
@@ -828,11 +726,9 @@ function showAlert(type, message) {
         <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
     `;
     
-    // Insert at the top of the container
     const container = document.querySelector('.container');
     container.insertBefore(alertDiv, container.firstChild);
     
-    // Auto-remove after 5 seconds
     setTimeout(() => {
         if (alertDiv.parentNode) {
             alertDiv.remove();
@@ -842,15 +738,13 @@ function showAlert(type, message) {
 
 function viewChallengeDetails(challengeIndex) {
     showAlert('info', `Viewing details for Challenge ${challengeIndex + 1}`);
-    // This could be expanded to show detailed submission history, etc.
 }
 
-// Auto-refresh dashboard every 5 minutes
+// Auto-refresh stats every 5 minutes
 setInterval(refreshStats, 300000);
 
-// Add confirmation for destructive actions
+// Initialize tooltips
 document.addEventListener('DOMContentLoaded', function() {
-    // Add hover effects and tooltips
     const tooltipTriggerList = [].slice.call(document.querySelectorAll('[title]'));
     const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
         return new bootstrap.Tooltip(tooltipTriggerEl);
