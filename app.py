@@ -4,6 +4,10 @@ import os
 import hashlib
 import re
 import base64
+import json
+import csv
+from io import StringIO
+from flask import jsonify, make_response, request
 from flask import Flask, request, render_template, redirect, url_for, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_wtf import FlaskForm
@@ -363,10 +367,268 @@ def admin():
     
     users = User.query.all()
     challenges = flag_mappings
-    solves = SolvedChallenge.query.all()
+    solves = SolvedChallenge.query.order_by(SolvedChallenge.solved_on.desc()).all()
     
-    return render_template('admin.html', users=users, challenges=challenges, solves=solves)
+    # Calculate additional stats for the template
+    total_users = len(users)
+    active_users = len(set(solve.user_id for solve in solves))
+    
+    # Enhanced challenge data with proper details
+    enhanced_challenges = []
+    for i, challenge in enumerate(challenges):
+        challenge_solves = [s for s in solves if s.challenge_index == i]
+        success_rate = (len(challenge_solves) / total_users * 100) if total_users > 0 else 0
+        
+        enhanced_challenges.append({
+            'index': i,
+            'filepath': challenge.get('filepath', f'Challenge {i+1}'),
+            'secret_type': challenge.get('secret_type', 'unknown'),
+            'old_secret': challenge.get('old_secret', ''),
+            'challenge_name': challenge.get('challenge_name', f'Challenge {i+1}'),
+            'description': get_challenge_description(i),
+            'solves': len(challenge_solves),
+            'success_rate': round(success_rate, 1)
+        })
+    
+    return render_template(
+        'admin.html', 
+        users=users, 
+        challenges=enhanced_challenges, 
+        solves=solves,
+        total_users=total_users,
+        active_users=active_users,
+        flag_mappings=flag_mappings  # Keep original for compatibility
+    )
 
+@app.route('/admin/export')
+@login_required
+def admin_export():
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    export_type = request.args.get('type', 'users')
+    
+    if export_type == 'users':
+        # Export users data
+        users = User.query.all()
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['ID', 'Username', 'Email', 'Registered On', 'Last Login', 'Is Admin', 'Challenges Solved'])
+        
+        for user in users:
+            writer.writerow([
+                user.id,
+                user.username,
+                user.email,
+                user.registered_on.strftime('%Y-%m-%d %H:%M:%S') if user.registered_on else '',
+                user.last_login.strftime('%Y-%m-%d %H:%M:%S') if user.last_login else '',
+                user.is_admin,
+                len(user.solved_challenges)
+            ])
+        
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = 'attachment; filename=users_export.csv'
+        return response
+    
+    elif export_type == 'solves':
+        # Export solves data
+        solves = SolvedChallenge.query.all()
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['User ID', 'Username', 'Challenge Index', 'Challenge Name', 'Solved On', 'Flag Submitted'])
+        
+        for solve in solves:
+            challenge_name = get_challenge_description(solve.challenge_index)
+            writer.writerow([
+                solve.user_id,
+                solve.user.username,
+                solve.challenge_index,
+                challenge_name,
+                solve.solved_on.strftime('%Y-%m-%d %H:%M:%S') if solve.solved_on else '',
+                solve.flag_submitted[:50] + '...' if len(solve.flag_submitted) > 50 else solve.flag_submitted
+            ])
+        
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = 'attachment; filename=solves_export.csv'
+        return response
+    
+    return jsonify({'error': 'Invalid export type'}), 400
+
+
+@app.route('/admin/user/<int:user_id>/toggle_admin', methods=['POST'])
+@login_required
+def toggle_admin(user_id):
+    current_user = User.query.get(session['user_id'])
+    if not current_user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    target_user = User.query.get(user_id)
+    if not target_user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Don't allow removing admin from yourself
+    if target_user.id == current_user.id:
+        return jsonify({'error': 'Cannot modify your own admin status'}), 400
+    
+    target_user.is_admin = not target_user.is_admin
+    db.session.commit()
+    
+    return jsonify({
+        'success': True, 
+        'is_admin': target_user.is_admin,
+        'message': f'User {target_user.username} admin status updated'
+    })
+
+
+@app.route('/admin/user/<int:user_id>/delete', methods=['DELETE'])
+@login_required
+def delete_user(user_id):
+    current_user = User.query.get(session['user_id'])
+    if not current_user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    target_user = User.query.get(user_id)
+    if not target_user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Don't allow deleting yourself or other admins
+    if target_user.id == current_user.id:
+        return jsonify({'error': 'Cannot delete yourself'}), 400
+    
+    if target_user.is_admin:
+        return jsonify({'error': 'Cannot delete admin users'}), 400
+    
+    # Delete user's solves first
+    SolvedChallenge.query.filter_by(user_id=user_id).delete()
+    db.session.delete(target_user)
+    db.session.commit()
+    
+    return jsonify({'success': True, 'message': f'User {target_user.username} deleted'})
+
+
+@app.route('/admin/reset_challenges', methods=['POST'])
+@login_required
+def reset_challenges():
+    current_user = User.query.get(session['user_id'])
+    if not current_user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Delete all solved challenges
+    SolvedChallenge.query.delete()
+    db.session.commit()
+    
+    return jsonify({'success': True, 'message': 'All challenge progress has been reset'})
+
+
+@app.route('/admin/stats')
+@login_required
+def admin_stats():
+    current_user = User.query.get(session['user_id'])
+    if not current_user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Calculate detailed statistics
+    total_users = User.query.count()
+    total_challenges = len(flag_mappings)
+    total_solves = SolvedChallenge.query.count()
+    
+    # Active users (users who have solved at least one challenge)
+    active_users = db.session.query(User.id).join(SolvedChallenge).distinct().count()
+    
+    # Challenge completion rates
+    challenge_stats = []
+    for i, challenge in enumerate(flag_mappings):
+        solves = SolvedChallenge.query.filter_by(challenge_index=i).count()
+        success_rate = (solves / total_users * 100) if total_users > 0 else 0
+        
+        challenge_stats.append({
+            'index': i,
+            'name': get_challenge_description(i),
+            'filepath': challenge.get('filepath', 'N/A'),
+            'secret_type': challenge.get('secret_type', 'unknown'),
+            'solves': solves,
+            'success_rate': round(success_rate, 1)
+        })
+    
+    # Recent activity (last 10 solves)
+    recent_solves = db.session.query(SolvedChallenge, User).join(User).order_by(SolvedChallenge.solved_on.desc()).limit(10).all()
+    recent_activity = []
+    for solve, user in recent_solves:
+        recent_activity.append({
+            'username': user.username,
+            'challenge_index': solve.challenge_index,
+            'challenge_name': get_challenge_description(solve.challenge_index),
+            'solved_on': solve.solved_on.strftime('%Y-%m-%d %H:%M:%S') if solve.solved_on else 'N/A'
+        })
+    
+    # Top performers
+    top_users = db.session.query(
+        User.username,
+        db.func.count(SolvedChallenge.id).label('solve_count'),
+        db.func.max(SolvedChallenge.solved_on).label('last_solve')
+    ).join(SolvedChallenge).group_by(User.id).order_by(db.desc('solve_count')).limit(10).all()
+    
+    top_performers = []
+    for username, solve_count, last_solve in top_users:
+        top_performers.append({
+            'username': username,
+            'solve_count': solve_count,
+            'completion_rate': round((solve_count / total_challenges) * 100, 1),
+            'last_solve': last_solve.strftime('%Y-%m-%d') if last_solve else 'N/A'
+        })
+    
+    return jsonify({
+        'overview': {
+            'total_users': total_users,
+            'active_users': active_users,
+            'total_challenges': total_challenges,
+            'total_solves': total_solves,
+            'avg_solves_per_user': round(total_solves / total_users, 2) if total_users > 0 else 0
+        },
+        'challenge_stats': challenge_stats,
+        'recent_activity': recent_activity,
+        'top_performers': top_performers
+    })
+
+
+@app.route('/admin/user/<int:user_id>/details')
+@login_required
+def user_details(user_id):
+    current_user = User.query.get(session['user_id'])
+    if not current_user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Get user's solved challenges with timestamps
+    solved_challenges = db.session.query(SolvedChallenge).filter_by(user_id=user_id).order_by(SolvedChallenge.solved_on).all()
+    
+    solves_data = []
+    for solve in solved_challenges:
+        solves_data.append({
+            'challenge_index': solve.challenge_index,
+            'challenge_name': get_challenge_description(solve.challenge_index),
+            'solved_on': solve.solved_on.strftime('%Y-%m-%d %H:%M:%S') if solve.solved_on else 'N/A',
+            'flag_submitted': solve.flag_submitted[:50] + '...' if len(solve.flag_submitted) > 50 else solve.flag_submitted
+        })
+    
+    return jsonify({
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email,
+            'registered_on': user.registered_on.strftime('%Y-%m-%d %H:%M:%S') if user.registered_on else 'N/A',
+            'last_login': user.last_login.strftime('%Y-%m-%d %H:%M:%S') if user.last_login else 'N/A',
+            'is_admin': user.is_admin,
+            'total_solves': len(solved_challenges)
+        },
+        'solved_challenges': solves_data
+    })
 
 if __name__ == '__main__':
     with app.app_context():
