@@ -134,7 +134,7 @@ def generate_expected_flag_for_challenge(challenge_index, email):
             elif secret_type == 'flag':
                 return f'flag{{{new_secret_plaintext}}}'
             elif secret_type == 'base64':
-                return base64.b64encode(new_secret_plaintext.encode('utf-8')).decode('utf-8')
+                return new_secret_plaintext
         
         # Update hash for next iteration (chaining)
         current_hash = hashlib.sha512(new_secret_plaintext.encode('utf-8')).hexdigest()
