@@ -197,7 +197,8 @@
             </div>
             <div class="card-body p-0">
                 <div class="list-group list-group-flush">
-                    {% for solve in solves|sort(attribute='solved_on', reverse=true)|list[:10] %}
+                    {% for solve in solves|sort(attribute='solved_on', reverse=true) %}
+                    {% if loop.index <= 10 %}
                     <div class="list-group-item">
                         <div class="d-flex justify-content-between align-items-start">
                             <div>
@@ -216,6 +217,7 @@
                             </div>
                         </div>
                     </div>
+                    {% endif %}
                     {% endfor %}
                 </div>
             </div>
