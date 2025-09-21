@@ -78,7 +78,7 @@ class User(db.Model):
     def check_password(self, password):
         return self.password_hash == hashlib.sha256(password.encode()).hexdigest()
 
-            def get_active_sessions(self):
+    def get_active_sessions(self):
         """Get all active sessions for this user"""
         return UserSession.query.filter_by(
             user_id=self.id, 
