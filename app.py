@@ -971,6 +971,28 @@ def admin_export():
         response.headers['Content-Disposition'] = 'attachment; filename=solves_export.csv'
         return response
     
+    elif export_type == 'attempts':
+        # Export failed attempts data
+        attempts = FailedAttempt.query.all()
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['User ID', 'Username', 'Challenge Index', 'Attempted Flag', 'Attempted On', 'IP Address'])
+        
+        for attempt in attempts:
+            writer.writerow([
+                attempt.user_id,
+                attempt.user.username,
+                attempt.challenge_index,
+                attempt.attempted_flag[:50] + '...' if len(attempt.attempted_flag) > 50 else attempt.attempted_flag,
+                attempt.attempted_on.strftime('%Y-%m-%d %H:%M:%S') if attempt.attempted_on else '',
+                attempt.ip_address
+            ])
+        
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = 'attachment; filename=failed_attempts_export.csv'
+        return response
+    
     return jsonify({'error': 'Invalid export type'}), 400
 
 
@@ -1343,37 +1365,7 @@ def get_current_max_attempts():
         'max_attempts': settings.max_attempts
     })
 
-@app.route('/admin/export')
-@login_required  
-def admin_export():
-    user = User.query.get(session['user_id'])
-    if not user.is_admin:
-        return jsonify({'error': 'Unauthorized'}), 403
-    
-    export_type = request.args.get('type', 'users')
-    
-    if export_type == 'attempts':
-        # Export failed attempts data
-        attempts = FailedAttempt.query.all()
-        output = StringIO()
-        writer = csv.writer(output)
-        writer.writerow(['User ID', 'Username', 'Challenge Index', 'Attempted Flag', 'Attempted On', 'IP Address'])
-        
-        for attempt in attempts:
-            writer.writerow([
-                attempt.user_id,
-                attempt.user.username,
-                attempt.challenge_index,
-                attempt.attempted_flag[:50] + '...' if len(attempt.attempted_flag) > 50 else attempt.attempted_flag,
-                attempt.attempted_on.strftime('%Y-%m-%d %H:%M:%S') if attempt.attempted_on else '',
-                attempt.ip_address
-            ])
-        
-        response = make_response(output.getvalue())
-        response.headers['Content-Type'] = 'text/csv'
-        response.headers['Content-Disposition'] = 'attachment; filename=failed_attempts_export.csv'
-        return response
-        
+
 @app.route('/admin/export-email-whitelist')
 @login_required
 def export_email_whitelist():
