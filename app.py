@@ -418,6 +418,32 @@ def logout():
     return redirect(url_for('index'))
 
 
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if 'user_id' in session:
+        return redirect(url_for('challenges'))
+    
+    form = RegisterForm()
+    if form.validate_on_submit():
+        user = User(
+            username=form.username.data,
+            email=form.email.data
+        )
+        user.set_password(form.password.data)
+        
+        # Check if this email should get admin privileges
+        email_info = AllowedEmail.get_email_info(form.email.data.lower())
+        if email_info and email_info.is_admin:
+            user.is_admin = True
+            flash(f'Welcome {user.username}! You have been granted admin privileges.', 'success')
+        
+        db.session.add(user)
+        db.session.commit()
+        flash('Registration successful! Please login.', 'success')
+        return redirect(url_for('login'))
+    
+    return render_template('register.html', form=form)
+    
 @app.route('/challenges')
 @login_required
 def challenges():
@@ -1114,7 +1140,7 @@ def export_email_whitelist():
     response.headers['Content-Disposition'] = 'attachment; filename=email_whitelist.csv'
     return response
 
-    
+
 @app.route('/admin/user/<int:user_id>/details')
 @login_required
 def user_details(user_id):
