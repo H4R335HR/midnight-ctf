@@ -572,9 +572,13 @@ def admin_sessions():
                 'different_ips': has_different_ips
             })
     
+    # Add current time to template context
+    current_time = datetime.utcnow()
+    
     return render_template('admin_sessions.html', 
                          active_sessions=active_sessions,
-                         multiple_sessions=users_with_multiple_sessions)
+                         multiple_sessions=users_with_multiple_sessions,
+                         current_time=current_time)
 
 @app.route('/admin/session/<session_id>/terminate', methods=['POST'])
 @login_required
