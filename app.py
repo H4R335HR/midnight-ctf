@@ -6,6 +6,7 @@ import re
 import base64
 import json
 import csv
+import requests
 from io import StringIO
 from flask import jsonify, make_response, request
 from flask import Flask, request, render_template, redirect, url_for, flash, session
@@ -13,8 +14,9 @@ from flask_sqlalchemy import SQLAlchemy
 from flask_wtf import FlaskForm
 from wtforms import StringField, PasswordField, SubmitField
 from wtforms.validators import DataRequired, Email, ValidationError, Length
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
+from user_agents import parse
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -43,6 +45,23 @@ with open(MAPPING_FILE, 'r') as f:
             })
 
 # Models
+# New model for session tracking
+class UserSession(db.Model):
+    id = db.Column(db.String(128), primary_key=True)  # Flask session ID
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    ip_address = db.Column(db.String(45), nullable=False)  # IPv6 compatible
+    user_agent = db.Column(db.Text, nullable=False)
+    browser = db.Column(db.String(100))
+    operating_system = db.Column(db.String(100))
+    device = db.Column(db.String(100))
+    location_country = db.Column(db.String(100))
+    location_city = db.Column(db.String(100))
+    login_time = db.Column(db.DateTime, default=datetime.utcnow)
+    last_activity = db.Column(db.DateTime, default=datetime.utcnow)
+    is_active = db.Column(db.Boolean, default=True)
+    
+    user = db.relationship('User', backref='sessions')
+
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -59,6 +78,23 @@ class User(db.Model):
     def check_password(self, password):
         return self.password_hash == hashlib.sha256(password.encode()).hexdigest()
 
+            def get_active_sessions(self):
+        """Get all active sessions for this user"""
+        return UserSession.query.filter_by(
+            user_id=self.id, 
+            is_active=True
+        ).order_by(UserSession.last_activity.desc()).all()
+    
+    def has_multiple_active_sessions(self):
+        """Check if user has multiple active sessions"""
+        return len(self.get_active_sessions()) > 1
+    
+    def get_concurrent_sessions_from_different_ips(self):
+        """Get sessions from different IP addresses that are active simultaneously"""
+        active_sessions = self.get_active_sessions()
+        unique_ips = set(session.ip_address for session in active_sessions)
+        return len(unique_ips) > 1, active_sessions
+
 
 class SolvedChallenge(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -66,6 +102,7 @@ class SolvedChallenge(db.Model):
     challenge_index = db.Column(db.Integer, nullable=False)
     solved_on = db.Column(db.DateTime, default=datetime.utcnow)
     flag_submitted = db.Column(db.String(256), nullable=False)
+
 
 
 # Forms
@@ -113,6 +150,86 @@ def login_required(f):
         return f(*args, **kwargs)
     return decorated_function
 
+def get_client_ip():
+    """Get client IP address, considering proxies"""
+    if request.environ.get('HTTP_X_FORWARDED_FOR') is None:
+        return request.environ['REMOTE_ADDR']
+    else:
+        # Handle multiple IPs in X-Forwarded-For header
+        return request.environ['HTTP_X_FORWARDED_FOR'].split(',')[0].strip()
+
+def get_location_from_ip(ip_address):
+    """Get approximate location from IP address using a free service"""
+    try:
+        # Using ipapi.co free service (consider upgrading for production)
+        response = requests.get(f'https://ipapi.co/{ip_address}/json/', timeout=5)
+        if response.status_code == 200:
+            data = response.json()
+            return data.get('country_name'), data.get('city')
+    except:
+        pass
+    return None, None
+
+def parse_user_agent(user_agent_string):
+    """Parse user agent string to extract browser, OS, device info"""
+    user_agent = parse(user_agent_string)
+    return {
+        'browser': f"{user_agent.browser.family} {user_agent.browser.version_string}",
+        'os': f"{user_agent.os.family} {user_agent.os.version_string}",
+        'device': user_agent.device.family if user_agent.device.family != 'Other' else 'Desktop'
+    }
+
+def create_user_session(user_id):
+    """Create a new session record"""
+    ip_address = get_client_ip()
+    user_agent_string = request.headers.get('User-Agent', 'Unknown')
+    
+    # Parse user agent
+    ua_info = parse_user_agent(user_agent_string)
+    
+    # Get location (optional - consider privacy implications)
+    country, city = get_location_from_ip(ip_address)
+    
+    # Deactivate old sessions from same IP (optional)
+    UserSession.query.filter_by(
+        user_id=user_id,
+        ip_address=ip_address
+    ).update({'is_active': False})
+    
+    # Create new session
+    new_session = UserSession(
+        id=session.get('_id', str(datetime.utcnow().timestamp())),
+        user_id=user_id,
+        ip_address=ip_address,
+        user_agent=user_agent_string,
+        browser=ua_info['browser'],
+        operating_system=ua_info['os'],
+        device=ua_info['device'],
+        location_country=country,
+        location_city=city
+    )
+    
+    db.session.add(new_session)
+    db.session.commit()
+    return new_session
+
+def update_session_activity(user_id):
+    """Update last activity for current session"""
+    current_session_id = session.get('_id')
+    if current_session_id:
+        UserSession.query.filter_by(
+            id=current_session_id,
+            user_id=user_id
+        ).update({'last_activity': datetime.utcnow()})
+        db.session.commit()
+
+def cleanup_old_sessions():
+    """Remove sessions older than 30 days"""
+    cutoff_date = datetime.utcnow() - timedelta(days=30)
+    UserSession.query.filter(
+        UserSession.last_activity < cutoff_date
+    ).delete()
+    db.session.commit()
 
 def generate_expected_flag_for_challenge(challenge_index, email):
     """Generate the expected flag for a specific challenge by simulating the chain."""
@@ -159,7 +276,19 @@ def generate_expected_flag_for_challenge(challenge_index, email):
     
     return None
 
-
+# Middleware to track activity
+@app.before_request
+def track_user_activity():
+    if 'user_id' in session:
+        update_session_activity(session['user_id'])
+        
+        # Check for suspicious activity (optional)
+        user = User.query.get(session['user_id'])
+        if user:
+            has_multiple_ips, sessions = user.get_concurrent_sessions_from_different_ips()
+            if has_multiple_ips and len(sessions) > 2:  # Threshold for alerting
+                # Log suspicious activity or send alert
+                app.logger.warning(f"User {user.username} has multiple active sessions from different IPs")
 
 
 # Routes
@@ -188,6 +317,7 @@ def register():
     return render_template('register.html', form=form)
 
 
+# Modified login route
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if 'user_id' in session:
@@ -198,10 +328,20 @@ def login():
         user = User.query.filter_by(email=form.email.data).first()
         if user and user.check_password(form.password.data):
             session['user_id'] = user.id
-            session['email'] = user.email  # Keep email for flag generation
-            session['username'] = user.username  # Add username for display
+            session['email'] = user.email
+            session['username'] = user.username
+            
+            # Create session tracking
+            user_session = create_user_session(user.id)
+            session['session_id'] = user_session.id
+            
             user.last_login = datetime.utcnow()
             db.session.commit()
+            
+            # Check for multiple sessions and warn user (optional)
+            if user.has_multiple_active_sessions():
+                flash('Notice: You have multiple active sessions. If this wasn\'t you, please change your password.', 'warning')
+            
             flash(f'Welcome back, {user.username}!', 'success')
             return redirect(url_for('challenges'))
         else:
@@ -212,6 +352,11 @@ def login():
 
 @app.route('/logout')
 def logout():
+    if 'session_id' in session:
+        # Deactivate current session
+        UserSession.query.filter_by(id=session['session_id']).update({'is_active': False})
+        db.session.commit()
+    
     session.clear()
     flash('You have been logged out', 'info')
     return redirect(url_for('index'))
@@ -401,6 +546,94 @@ def admin():
         total_users=total_users,
         active_users=active_users
     )
+
+# New admin routes for session management
+@app.route('/admin/sessions')
+@login_required
+def admin_sessions():
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        flash('Unauthorized access', 'danger')
+        return redirect(url_for('challenges'))
+    
+    # Get all active sessions
+    active_sessions = db.session.query(UserSession, User).join(User).filter(
+        UserSession.is_active == True
+    ).order_by(UserSession.last_activity.desc()).all()
+    
+    # Get users with multiple sessions
+    users_with_multiple_sessions = []
+    for user_obj in User.query.all():
+        if user_obj.has_multiple_active_sessions():
+            has_different_ips, sessions = user_obj.get_concurrent_sessions_from_different_ips()
+            users_with_multiple_sessions.append({
+                'user': user_obj,
+                'sessions': sessions,
+                'different_ips': has_different_ips
+            })
+    
+    return render_template('admin_sessions.html', 
+                         active_sessions=active_sessions,
+                         multiple_sessions=users_with_multiple_sessions)
+
+@app.route('/admin/session/<session_id>/terminate', methods=['POST'])
+@login_required
+def terminate_session(session_id):
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    user_session = UserSession.query.get(session_id)
+    if not user_session:
+        return jsonify({'error': 'Session not found'}), 404
+    
+    user_session.is_active = False
+    db.session.commit()
+    
+    return jsonify({'success': True, 'message': 'Session terminated'})
+
+@app.route('/admin/user/<int:user_id>/sessions')
+@login_required
+def user_sessions(user_id):
+    current_user = User.query.get(session['user_id'])
+    if not current_user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    # Get all sessions for this user (last 30 days)
+    cutoff_date = datetime.utcnow() - timedelta(days=30)
+    sessions = UserSession.query.filter(
+        UserSession.user_id == user_id,
+        UserSession.login_time >= cutoff_date
+    ).order_by(UserSession.login_time.desc()).all()
+    
+    sessions_data = []
+    for sess in sessions:
+        sessions_data.append({
+            'id': sess.id,
+            'ip_address': sess.ip_address,
+            'browser': sess.browser,
+            'operating_system': sess.operating_system,
+            'device': sess.device,
+            'location': f"{sess.location_city}, {sess.location_country}" if sess.location_city else sess.location_country,
+            'login_time': sess.login_time.strftime('%Y-%m-%d %H:%M:%S'),
+            'last_activity': sess.last_activity.strftime('%Y-%m-%d %H:%M:%S'),
+            'is_active': sess.is_active,
+            'user_agent': sess.user_agent
+        })
+    
+    return jsonify({
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email
+        },
+        'sessions': sessions_data,
+        'has_multiple_active': user.has_multiple_active_sessions()
+    })
 
 
 @app.route('/admin/export')
