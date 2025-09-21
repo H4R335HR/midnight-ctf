@@ -1,0 +1,454 @@
+{% extends 'base.html' %}
+{% block title %}Registration Settings - Admin Dashboard{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-user-cog me-2"></i>Registration Settings</h2>
+    <div>
+        <a href="/admin" class="btn btn-outline-secondary">
+            <i class="fas fa-arrow-left me-1"></i>Back to Admin
+        </a>
+    </div>
+</div>
+
+<!-- Current Status Card -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-shield-alt me-2"></i>Registration Status</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6>Current Mode:</h6>
+                        <span class="badge {{ 'bg-danger' if settings.is_restricted else 'bg-success' }} fs-6">
+                            {{ 'RESTRICTED' if settings.is_restricted else 'OPEN' }}
+                        </span>
+                        <p class="text-muted mt-2 mb-0">
+                            {{ settings.restriction_message if settings.is_restricted else 'Anyone can register' }}
+                        </p>
+                    </div>
+                    <div>
+                        <button class="btn {{ 'btn-success' if settings.is_restricted else 'btn-danger' }}" 
+                                onclick="toggleRestriction()" id="toggle-btn">
+                            <i class="fas {{ 'fa-unlock' if settings.is_restricted else 'fa-lock' }}"></i>
+                            {{ 'Lift Restrictions' if settings.is_restricted else 'Enable Restrictions' }}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-list me-2"></i>Whitelist Statistics</h5>
+            </div>
+            <div class="card-body">
+                <div class="row text-center">
+                    <div class="col-4">
+                        <h4 class="text-primary" id="total-emails">{{ total_allowed }}</h4>
+                        <small class="text-muted">Total Emails</small>
+                    </div>
+                    <div class="col-4">
+                        <h4 class="text-warning">{{ allowed_emails|selectattr('is_admin')|list|length }}</h4>
+                        <small class="text-muted">Auto-Admin</small>
+                    </div>
+                    <div class="col-4">
+                        <h4 class="text-info">{{ allowed_emails|selectattr('organization')|list|length }}</h4>
+                        <small class="text-muted">With Org</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- File Upload Section -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-upload me-2"></i>Upload Email Whitelist</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <form id="upload-form" enctype="multipart/form-data">
+                            <div class="mb-3">
+                                <label for="file-input" class="form-label">Select File (.txt or .csv)</label>
+                                <input type="file" class="form-control" id="file-input" name="file" 
+                                       accept=".txt,.csv" required>
+                                <div class="form-text">
+                                    <strong>TXT format:</strong> One email per line<br>
+                                    <strong>CSV format:</strong> Headers: email, name, organization, is_admin
+                                </div>
+                            </div>
+                            
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="clear-existing" name="clear_existing">
+                                <label class="form-check-label" for="clear-existing">
+                                    Clear existing whitelist before uploading
+                                </label>
+                            </div>
+                            
+                            <button type="submit" class="btn btn-primary" id="upload-btn">
+                                <i class="fas fa-upload me-1"></i>Upload Whitelist
+                            </button>
+                        </form>
+                    </div>
+                    
+                    <div class="col-md-4">
+                        <h6>File Format Examples:</h6>
+                        <div class="bg-dark p-2 rounded mb-2">
+                            <small class="text-light font-monospace">
+                                <strong>emails.txt:</strong><br>
+                                admin@company.com<br>
+                                user1@university.edu<br>
+                                user2@school.org
+                            </small>
+                        </div>
+                        <div class="bg-dark p-2 rounded">
+                            <small class="text-light font-monospace">
+                                <strong>emails.csv:</strong><br>
+                                email,name,organization,is_admin<br>
+                                admin@company.com,Admin,Company,true<br>
+                                user@edu.org,Student,University,false
+                            </small>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Upload Progress -->
+                <div id="upload-progress" class="mt-3" style="display: none;">
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                             style="width: 100%">Processing...</div>
+                    </div>
+                </div>
+                
+                <!-- Upload Results -->
+                <div id="upload-results" class="mt-3" style="display: none;">
+                    <!-- Results will be populated here -->
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Current Whitelist -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-list me-2"></i>Current Email Whitelist</h5>
+                <div class="btn-group">
+                    <button class="btn btn-sm btn-outline-success" onclick="exportWhitelist()">
+                        <i class="fas fa-download me-1"></i>Export CSV
+                    </button>
+                    <button class="btn btn-sm btn-outline-danger" onclick="clearWhitelist()">
+                        <i class="fas fa-trash me-1"></i>Clear All
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                {% if allowed_emails %}
+                <div class="table-responsive">
+                    <table class="table table-hover" id="whitelist-table">
+                        <thead>
+                            <tr>
+                                <th>Email</th>
+                                <th>Name</th>
+                                <th>Organization</th>
+                                <th>Admin Rights</th>
+                                <th>Added On</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for email in allowed_emails %}
+                            <tr id="email-{{ email.id }}">
+                                <td>
+                                    <strong>{{ email.email }}</strong>
+                                </td>
+                                <td>{{ email.name or '-' }}</td>
+                                <td>{{ email.organization or '-' }}</td>
+                                <td>
+                                    {% if email.is_admin %}
+                                        <span class="badge bg-warning">
+                                            <i class="fas fa-crown me-1"></i>Admin
+                                        </span>
+                                    {% else %}
+                                        <span class="badge bg-secondary">User</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-muted small">
+                                    {{ email.added_on.strftime('%Y-%m-%d %H:%M') if email.added_on else 'N/A' }}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-danger" 
+                                            onclick="removeEmail({{ email.id }}, '{{ email.email }}')"
+                                            title="Remove from whitelist">
+                                        <i class="fas fa-times"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% else %}
+                <div class="text-center text-muted py-4">
+                    <i class="fas fa-inbox fa-3x mb-3"></i>
+                    <h5>No emails in whitelist</h5>
+                    <p>Upload a file to add allowed email addresses</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Styles -->
+<style>
+.card {
+    background-color: #1e1e1e !important;
+    border-color: #333 !important;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.3);
+}
+
+.card-header {
+    background-color: #2a2a2a !important;
+    border-bottom-color: #444 !important;
+    color: #e0e0e0 !important;
+}
+
+.table {
+    color: #e0e0e0 !important;
+}
+
+.table th {
+    border-bottom-color: #444 !important;
+    font-weight: 600;
+}
+
+.table td {
+    border-bottom-color: #444 !important;
+}
+
+.text-muted {
+    color: #6c757d !important;
+}
+
+.bg-dark {
+    background-color: #2a2a2a !important;
+}
+
+.modal-content {
+    background-color: #1e1e1e !important;
+    border-color: #333 !important;
+}
+
+.modal-header {
+    border-bottom-color: #444 !important;
+}
+
+.form-control {
+    background-color: #2a2a2a !important;
+    border-color: #444 !important;
+    color: #e0e0e0 !important;
+}
+
+.form-control:focus {
+    background-color: #2a2a2a !important;
+    border-color: #007bff !important;
+    color: #e0e0e0 !important;
+}
+
+.progress {
+    background-color: #333 !important;
+}
+</style>
+
+<!-- JavaScript -->
+<script>
+function toggleRestriction() {
+    const btn = document.getElementById('toggle-btn');
+    btn.disabled = true;
+    
+    fetch('/admin/toggle-registration-restriction', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', data.message);
+            setTimeout(() => location.reload(), 1000);
+        } else {
+            showAlert('danger', data.error);
+        }
+    })
+    .catch(error => {
+        showAlert('danger', 'An error occurred');
+        console.error(error);
+    })
+    .finally(() => {
+        btn.disabled = false;
+    });
+}
+
+document.getElementById('upload-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    
+    const formData = new FormData(this);
+    const fileInput = document.getElementById('file-input');
+    const uploadBtn = document.getElementById('upload-btn');
+    const progressDiv = document.getElementById('upload-progress');
+    const resultsDiv = document.getElementById('upload-results');
+    
+    if (!fileInput.files[0]) {
+        showAlert('danger', 'Please select a file');
+        return;
+    }
+    
+    // Show progress
+    uploadBtn.disabled = true;
+    progressDiv.style.display = 'block';
+    resultsDiv.style.display = 'none';
+    
+    // Add clear_existing checkbox value
+    formData.append('clear_existing', document.getElementById('clear-existing').checked);
+    
+    fetch('/admin/upload-email-whitelist', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        progressDiv.style.display = 'none';
+        
+        if (data.success) {
+            showAlert('success', data.message);
+            
+            // Show detailed results
+            const resultsHtml = `
+                <div class="alert alert-info">
+                    <h6>Upload Summary:</h6>
+                    <ul class="mb-0">
+                        <li>Emails added: ${data.details.added}</li>
+                        <li>Duplicates skipped: ${data.details.skipped}</li>
+                        <li>Total parsed: ${data.details.total_parsed}</li>
+                        ${data.details.errors.length > 0 ? 
+                            `<li class="text-warning">Errors: ${data.details.errors.length}</li>` : ''
+                        }
+                    </ul>
+                    ${data.details.errors.length > 0 ? 
+                        `<div class="mt-2"><strong>Errors:</strong><br>${data.details.errors.join('<br>')}</div>` : ''
+                    }
+                </div>
+            `;
+            resultsDiv.innerHTML = resultsHtml;
+            resultsDiv.style.display = 'block';
+            
+            // Reload page after 3 seconds to show updated list
+            setTimeout(() => location.reload(), 3000);
+        } else {
+            showAlert('danger', data.error);
+        }
+    })
+    .catch(error => {
+        progressDiv.style.display = 'none';
+        showAlert('danger', 'Upload failed: ' + error.message);
+        console.error(error);
+    })
+    .finally(() => {
+        uploadBtn.disabled = false;
+    });
+});
+
+function removeEmail(emailId, emailAddress) {
+    if (confirm(`Are you sure you want to remove "${emailAddress}" from the whitelist?`)) {
+        fetch(`/admin/remove-email/${emailId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', data.message);
+                document.getElementById(`email-${emailId}`).remove();
+                updateEmailCount();
+            } else {
+                showAlert('danger', data.error);
+            }
+        })
+        .catch(error => {
+            showAlert('danger', 'An error occurred');
+            console.error(error);
+        });
+    }
+}
+
+function clearWhitelist() {
+    if (confirm('Are you sure you want to clear the entire email whitelist? This action cannot be undone!')) {
+        fetch('/admin/clear-email-whitelist', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                showAlert('success', data.message);
+                setTimeout(() => location.reload(), 1000);
+            } else {
+                showAlert('danger', data.error);
+            }
+        })
+        .catch(error => {
+            showAlert('danger', 'An error occurred');
+            console.error(error);
+        });
+    }
+}
+
+function exportWhitelist() {
+    window.open('/admin/export-email-whitelist', '_blank');
+}
+
+function updateEmailCount() {
+    const rows = document.querySelectorAll('#whitelist-table tbody tr');
+    document.getElementById('total-emails').textContent = rows.length;
+}
+
+function showAlert(type, message) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    const container = document.querySelector('.container');
+    container.insertBefore(alertDiv, container.firstChild);
+    
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 5000);
+}
+
+// Auto-refresh email count every 30 seconds
+setInterval(updateEmailCount, 30000);
+</script>
+
+{% endblock %}

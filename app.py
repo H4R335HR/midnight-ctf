@@ -7,6 +7,8 @@ import base64
 import json
 import csv
 import requests
+import io
+from werkzeug.utils import secure_filename
 from io import StringIO
 from flask import jsonify, make_response, request
 from flask import Flask, request, render_template, redirect, url_for, flash, session
@@ -95,6 +97,46 @@ class User(db.Model):
         unique_ips = set(session.ip_address for session in active_sessions)
         return len(unique_ips) > 1, active_sessions
 
+class RegistrationSettings(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    is_restricted = db.Column(db.Boolean, default=False, nullable=False)
+    restriction_message = db.Column(db.Text, default="Registration is currently restricted to invited participants only.")
+    created_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    created_on = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_on = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    
+    creator = db.relationship('User', backref='registration_settings_created')
+    
+    @staticmethod
+    def get_current_settings():
+        """Get the current registration settings (singleton pattern)"""
+        settings = RegistrationSettings.query.first()
+        if not settings:
+            settings = RegistrationSettings()
+            db.session.add(settings)
+            db.session.commit()
+        return settings
+
+class AllowedEmail(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), nullable=False, unique=True, index=True)
+    name = db.Column(db.String(100))  # Optional participant name
+    organization = db.Column(db.String(100))  # Optional organization
+    is_admin = db.Column(db.Boolean, default=False)  # Auto-assign admin on registration
+    added_on = db.Column(db.DateTime, default=datetime.utcnow)
+    added_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    
+    creator = db.relationship('User', backref='emails_added')
+    
+    @staticmethod
+    def is_email_allowed(email):
+        """Check if an email is in the whitelist"""
+        return AllowedEmail.query.filter_by(email=email.lower()).first() is not None
+    
+    @staticmethod
+    def get_email_info(email):
+        """Get information about an allowed email"""
+        return AllowedEmail.query.filter_by(email=email.lower()).first()
 
 class SolvedChallenge(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -130,6 +172,14 @@ class RegisterForm(FlaskForm):
             raise ValidationError('Username already taken. Please choose a different one.')
     
     def validate_email(self, email):
+        # Check registration restrictions
+        settings = RegistrationSettings.get_current_settings()
+        
+        if settings.is_restricted:
+            if not AllowedEmail.is_email_allowed(email.data.lower()):
+                raise ValidationError(settings.restriction_message)
+        
+        # Check if email already exists
         user = User.query.filter_by(email=email.data).first()
         if user:
             raise ValidationError('Email already registered. Please login instead.')
@@ -297,7 +347,6 @@ def index():
     return render_template('index.html')
 
 
-@app.route('/register', methods=['GET', 'POST'])
 def register():
     if 'user_id' in session:
         return redirect(url_for('challenges'))
@@ -309,6 +358,13 @@ def register():
             email=form.email.data
         )
         user.set_password(form.password.data)
+        
+        # Check if this email should get admin privileges
+        email_info = AllowedEmail.get_email_info(form.email.data.lower())
+        if email_info and email_info.is_admin:
+            user.is_admin = True
+            flash(f'Welcome {user.username}! You have been granted admin privileges.', 'success')
+        
         db.session.add(user)
         db.session.commit()
         flash('Registration successful! Please login.', 'success')
@@ -833,7 +889,232 @@ def admin_stats():
         'top_performers': top_performers
     })
 
+@app.route('/admin/registration-settings')
+@login_required
+def admin_registration_settings():
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        flash('Unauthorized access', 'danger')
+        return redirect(url_for('challenges'))
+    
+    settings = RegistrationSettings.get_current_settings()
+    allowed_emails = AllowedEmail.query.order_by(AllowedEmail.added_on.desc()).all()
+    
+    return render_template('admin_registration.html', 
+                         settings=settings, 
+                         allowed_emails=allowed_emails,
+                         total_allowed=len(allowed_emails))
 
+@app.route('/admin/toggle-registration-restriction', methods=['POST'])
+@login_required
+def toggle_registration_restriction():
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    settings = RegistrationSettings.get_current_settings()
+    settings.is_restricted = not settings.is_restricted
+    settings.updated_on = datetime.utcnow()
+    
+    db.session.commit()
+    
+    status = 'enabled' if settings.is_restricted else 'disabled'
+    return jsonify({
+        'success': True, 
+        'is_restricted': settings.is_restricted,
+        'message': f'Registration restrictions {status}'
+    })
+
+@app.route('/admin/upload-email-whitelist', methods=['POST'])
+@login_required
+def upload_email_whitelist():
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    
+    # Check file extension
+    filename = secure_filename(file.filename)
+    if not filename.lower().endswith(('.txt', '.csv')):
+        return jsonify({'error': 'Only .txt and .csv files are allowed'}), 400
+    
+    try:
+        # Read file content
+        file_content = file.read().decode('utf-8')
+        
+        # Parse based on file type
+        parsed_emails = []
+        errors = []
+        
+        if filename.lower().endswith('.txt'):
+            parsed_emails, errors = parse_txt_emails(file_content)
+        elif filename.lower().endswith('.csv'):
+            parsed_emails, errors = parse_csv_emails(file_content)
+        
+        # Clear existing whitelist if requested
+        if request.form.get('clear_existing') == 'true':
+            AllowedEmail.query.delete()
+        
+        # Add new emails
+        added_count = 0
+        skipped_count = 0
+        
+        for email_data in parsed_emails:
+            existing = AllowedEmail.query.filter_by(email=email_data['email']).first()
+            if not existing:
+                new_email = AllowedEmail(
+                    email=email_data['email'],
+                    name=email_data.get('name'),
+                    organization=email_data.get('organization'),
+                    is_admin=email_data.get('is_admin', False),
+                    added_by=user.id
+                )
+                db.session.add(new_email)
+                added_count += 1
+            else:
+                skipped_count += 1
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Upload completed! Added {added_count} emails, skipped {skipped_count} duplicates.',
+            'details': {
+                'added': added_count,
+                'skipped': skipped_count,
+                'errors': errors,
+                'total_parsed': len(parsed_emails)
+            }
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'Failed to process file: {str(e)}'}), 500
+
+def parse_txt_emails(content):
+    """Parse emails from text file (one email per line)"""
+    emails = []
+    errors = []
+    
+    lines = content.strip().split('\n')
+    for i, line in enumerate(lines, 1):
+        line = line.strip()
+        if not line or line.startswith('#'):  # Skip empty lines and comments
+            continue
+            
+        if '@' in line and '.' in line.split('@')[1]:
+            emails.append({
+                'email': line.lower(),
+                'name': None,
+                'organization': None,
+                'is_admin': False
+            })
+        else:
+            errors.append(f'Line {i}: Invalid email format: {line}')
+    
+    return emails, errors
+
+def parse_csv_emails(content):
+    """Parse emails from CSV file with optional metadata"""
+    emails = []
+    errors = []
+    
+    try:
+        # Use StringIO to treat string as file
+        csv_file = io.StringIO(content)
+        reader = csv.DictReader(csv_file)
+        
+        for i, row in enumerate(reader, 2):  # Start from 2 (header is line 1)
+            email = row.get('email', '').strip().lower()
+            
+            if not email:
+                errors.append(f'Row {i}: Missing email')
+                continue
+                
+            if '@' not in email or '.' not in email.split('@')[1]:
+                errors.append(f'Row {i}: Invalid email format: {email}')
+                continue
+            
+            emails.append({
+                'email': email,
+                'name': row.get('name', '').strip() or None,
+                'organization': row.get('organization', '').strip() or None,
+                'is_admin': row.get('is_admin', '').strip().lower() in ['true', '1', 'yes']
+            })
+            
+    except Exception as e:
+        errors.append(f'CSV parsing error: {str(e)}')
+    
+    return emails, errors
+
+@app.route('/admin/remove-email/<int:email_id>', methods=['DELETE'])
+@login_required
+def remove_email_from_whitelist(email_id):
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    email_record = AllowedEmail.query.get(email_id)
+    if not email_record:
+        return jsonify({'error': 'Email not found'}), 404
+    
+    db.session.delete(email_record)
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': f'Removed {email_record.email} from whitelist'
+    })
+
+@app.route('/admin/clear-email-whitelist', methods=['POST'])
+@login_required
+def clear_email_whitelist():
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    count = AllowedEmail.query.count()
+    AllowedEmail.query.delete()
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': f'Cleared {count} emails from whitelist'
+    })
+
+@app.route('/admin/export-email-whitelist')
+@login_required
+def export_email_whitelist():
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    allowed_emails = AllowedEmail.query.all()
+    
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['email', 'name', 'organization', 'is_admin', 'added_on'])
+    
+    for email in allowed_emails:
+        writer.writerow([
+            email.email,
+            email.name or '',
+            email.organization or '',
+            email.is_admin,
+            email.added_on.strftime('%Y-%m-%d %H:%M:%S') if email.added_on else ''
+        ])
+    
+    response = make_response(output.getvalue())
+    response.headers['Content-Type'] = 'text/csv'
+    response.headers['Content-Disposition'] = 'attachment; filename=email_whitelist.csv'
+    return response
+
+    
 @app.route('/admin/user/<int:user_id>/details')
 @login_required
 def user_details(user_id):
