@@ -1,0 +1,521 @@
+{% extends 'base.html' %}
+{% block title %}CTF Settings - Midnight CTF{% endblock %}
+{% block content %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="fas fa-cogs me-2"></i>CTF Settings & Rate Limiting</h2>
+    <a href="/admin" class="btn btn-outline-secondary">
+        <i class="fas fa-arrow-left me-1"></i>Back to Admin Dashboard
+    </a>
+</div>
+
+<!-- Settings Control Card -->
+<div class="row mb-4">
+    <div class="col-lg-6">
+        <div class="card border-primary">
+            <div class="card-header bg-primary text-white">
+                <h5 class="mb-0"><i class="fas fa-shield-alt me-2"></i>Attempt Limit Settings</h5>
+            </div>
+            <div class="card-body">
+                <div class="row">
+                    <div class="col-md-8">
+                        <h6>Maximum Wrong Attempts Per Challenge</h6>
+                        <p class="text-muted mb-3">
+                            Control how many incorrect flags users can submit before being locked out of a challenge.
+                        </p>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="input-group">
+                            <input type="number" id="maxAttemptsInput" class="form-control" 
+                                   value="{{ settings.max_attempts }}" min="1" max="100">
+                            <button class="btn btn-success" onclick="updateMaxAttempts()">
+                                <i class="fas fa-save"></i> Update
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                
+                <hr>
+                
+                <div class="row text-center">
+                    <div class="col-md-4">
+                        <div class="card bg-dark border-info">
+                            <div class="card-body">
+                                <h5 class="text-info">{{ total_failed_attempts }}</h5>
+                                <small>Total Failed Attempts</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-dark border-warning">
+                            <div class="card-body">
+                                <h5 class="text-warning">{{ users_at_limit }}</h5>
+                                <small>Users at Limit</small>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="card bg-dark border-success">
+                            <div class="card-body">
+                                <h5 class="text-success">{{ settings.max_attempts }}</h5>
+                                <small>Current Max Attempts</small>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="card-footer text-muted">
+                <small>
+                    <i class="fas fa-info-circle me-1"></i>
+                    Last updated: {{ settings.updated_on.strftime('%Y-%m-%d %H:%M:%S') if settings.updated_on else 'Never' }}
+                    {% if settings.updater %}
+                        by {{ settings.updater.username }}
+                    {% endif %}
+                </small>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Quick Actions -->
+    <div class="col-lg-6">
+        <div class="card border-warning">
+            <div class="card-header bg-warning text-dark">
+                <h5 class="mb-0"><i class="fas fa-tools me-2"></i>Quick Actions</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-info" onclick="viewUsersAtLimit()">
+                        <i class="fas fa-users me-2"></i>View Users at Limit ({{ users_at_limit }})
+                    </button>
+                    <button class="btn btn-outline-primary" onclick="resetAllAttempts()" 
+                            {% if total_failed_attempts == 0 %}disabled{% endif %}>
+                        <i class="fas fa-undo me-2"></i>Reset All Failed Attempts
+                    </button>
+                    <button class="btn btn-outline-success" onclick="exportAttemptData()">
+                        <i class="fas fa-download me-2"></i>Export Attempt Data
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="refreshSettings()">
+                        <i class="fas fa-sync-alt me-2"></i>Refresh Data
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Challenge Attempt Statistics -->
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-chart-bar me-2"></i>Challenge Attempt Statistics</h5>
+                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#challengeStatsTable">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+            </div>
+            <div class="card-body p-0 collapse show" id="challengeStatsTable">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0" id="challenge-stats-table">
+                        <thead class="table-dark">
+                            <tr>
+                                <th>Challenge</th>
+                                <th>Description</th>
+                                <th>Total Attempts</th>
+                                <th>Unique Users</th>
+                                <th>Users at Limit</th>
+                                <th>Avg Attempts/User</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for challenge in challenge_stats %}
+                            <tr>
+                                <td>
+                                    <span class="badge bg-primary">Challenge {{ challenge.index + 1 }}</span>
+                                </td>
+                                <td>
+                                    <strong>{{ challenge.name }}</strong>
+                                </td>
+                                <td>
+                                    <span class="badge bg-info">{{ challenge.total_attempts }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ challenge.unique_users }}</span>
+                                </td>
+                                <td>
+                                    {% if challenge.users_at_limit > 0 %}
+                                        <span class="badge bg-warning">{{ challenge.users_at_limit }}</span>
+                                    {% else %}
+                                        <span class="badge bg-success">0</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if challenge.unique_users > 0 %}
+                                        {{ "%.1f"|format(challenge.total_attempts / challenge.unique_users) }}
+                                    {% else %}
+                                        0.0
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-primary" 
+                                                onclick="viewChallengeDetails({{ challenge.index }})" 
+                                                title="View Details">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        {% if challenge.total_attempts > 0 %}
+                                        <button class="btn btn-outline-warning" 
+                                                onclick="resetChallengeAttempts({{ challenge.index }})" 
+                                                title="Reset Attempts">
+                                            <i class="fas fa-undo"></i>
+                                        </button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Users at Limit Modal -->
+<div class="modal fade" id="usersAtLimitModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Users at Attempt Limit</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="usersAtLimitContent">
+                <!-- Content loaded dynamically -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Challenge Details Modal -->
+<div class="modal fade" id="challengeDetailsModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Challenge Attempt Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="challengeDetailsContent">
+                <!-- Content loaded dynamically -->
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- User Reset Modal -->
+<div class="modal fade" id="userResetModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Reset User Attempts</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <form id="userResetForm">
+                    <div class="mb-3">
+                        <label for="userIdInput" class="form-label">User ID</label>
+                        <input type="number" class="form-control" id="userIdInput" required>
+                    </div>
+                    <div class="mb-3">
+                        <label for="challengeIndexInput" class="form-label">Challenge Index (optional)</label>
+                        <input type="number" class="form-control" id="challengeIndexInput" 
+                               placeholder="Leave empty to reset all attempts">
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-warning" onclick="executeUserReset()">Reset Attempts</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Dark theme compatibility */
+.card {
+    background-color: #1e1e1e !important;
+    border-color: #333 !important;
+    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.3);
+}
+
+.card:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.5);
+}
+
+.card-header {
+    background-color: #2a2a2a !important;
+    border-bottom-color: #444 !important;
+    color: #e0e0e0 !important;
+}
+
+.table {
+    color: #e0e0e0 !important;
+}
+
+.table-dark {
+    background-color: #2a2a2a !important;
+    color: #e0e0e0 !important;
+}
+
+.table-striped > tbody > tr:nth-of-type(odd) > td {
+    background-color: #252525 !important;
+}
+
+.form-control {
+    background-color: #2a2a2a !important;
+    border-color: #444 !important;
+    color: #e0e0e0 !important;
+}
+
+.form-control:focus {
+    background-color: #2a2a2a !important;
+    color: #e0e0e0 !important;
+    border-color: #007bff !important;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25) !important;
+}
+
+.modal-content {
+    background-color: #1e1e1e !important;
+    border-color: #333 !important;
+}
+
+.modal-header {
+    border-bottom-color: #444 !important;
+}
+
+.modal-footer {
+    border-top-color: #444 !important;
+}
+
+.badge {
+    font-weight: 500;
+}
+
+.btn-group-sm > .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.border-primary {
+    border-color: #007bff !important;
+}
+
+.border-warning {
+    border-color: #ffc107 !important;
+}
+
+.border-info {
+    border-color: #17a2b8 !important;
+}
+
+.border-success {
+    border-color: #28a745 !important;
+}
+
+.bg-dark {
+    background-color: #343a40 !important;
+}
+</style>
+
+<script>
+// Settings Management Functions
+function updateMaxAttempts() {
+    const newMax = document.getElementById('maxAttemptsInput').value;
+    
+    if (!newMax || newMax < 1 || newMax > 100) {
+        showAlert('danger', 'Max attempts must be between 1 and 100');
+        return;
+    }
+    
+    fetch('/admin/update-max-attempts', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            max_attempts: parseInt(newMax)
+        })
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', data.message);
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showAlert('danger', data.error);
+        }
+    })
+    .catch(error => {
+        showAlert('danger', 'Failed to update max attempts');
+        console.error(error);
+    });
+}
+
+function viewUsersAtLimit() {
+    showAlert('info', 'Loading users at limit...');
+    
+    // This would require a new endpoint to get detailed user data
+    const content = `
+        <div class="alert alert-info">
+            <i class="fas fa-info-circle me-2"></i>
+            Feature coming soon: This will show detailed information about users who have reached the attempt limit.
+        </div>
+        <p>For now, you can:</p>
+        <ul>
+            <li>Check individual user details from the main admin dashboard</li>
+            <li>Use the challenge details view to see specific attempt information</li>
+            <li>Reset attempts for specific users using the form below</li>
+        </ul>
+        <button class="btn btn-primary" onclick="showUserResetModal()">Reset User Attempts</button>
+    `;
+    
+    document.getElementById('usersAtLimitContent').innerHTML = content;
+    new bootstrap.Modal(document.getElementById('usersAtLimitModal')).show();
+}
+
+function resetAllAttempts() {
+    if (confirm('Are you sure you want to reset ALL failed attempts for ALL users? This action cannot be undone!')) {
+        showAlert('warning', 'This feature requires additional backend implementation');
+        // You would need to add a new endpoint for this
+    }
+}
+
+function exportAttemptData() {
+    showAlert('info', 'Exporting attempt data...');
+    // This could export to CSV - you'd need to add the endpoint
+    window.open('/admin/export?type=attempts', '_blank');
+}
+
+function refreshSettings() {
+    showAlert('info', 'Refreshing settings...');
+    setTimeout(() => location.reload(), 1000);
+}
+
+// Challenge Management Functions
+function viewChallengeDetails(challengeIndex) {
+    showAlert('info', `Loading details for Challenge ${challengeIndex + 1}...`);
+    
+    // Mock content - you'd need to implement the actual endpoint
+    const content = `
+        <div class="row">
+            <div class="col-md-6">
+                <h6>Challenge ${challengeIndex + 1} - Attempt Details</h6>
+                <div class="alert alert-info">
+                    This would show detailed attempt information including:
+                    <ul class="mb-0 mt-2">
+                        <li>List of users who attempted this challenge</li>
+                        <li>Number of attempts per user</li>
+                        <li>Timestamps of attempts</li>
+                        <li>Users currently at limit</li>
+                    </ul>
+                </div>
+            </div>
+            <div class="col-md-6">
+                <h6>Quick Actions</h6>
+                <div class="d-grid gap-2">
+                    <button class="btn btn-outline-warning" onclick="resetChallengeAttempts(${challengeIndex})">
+                        Reset All Attempts for This Challenge
+                    </button>
+                    <button class="btn btn-outline-info" onclick="exportChallengeData(${challengeIndex})">
+                        Export This Challenge's Data
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.getElementById('challengeDetailsContent').innerHTML = content;
+    new bootstrap.Modal(document.getElementById('challengeDetailsModal')).show();
+}
+
+function resetChallengeAttempts(challengeIndex) {
+    if (confirm(`Are you sure you want to reset all failed attempts for Challenge ${challengeIndex + 1}?`)) {
+        showAlert('warning', 'This feature requires additional backend implementation');
+        // You would implement this endpoint
+    }
+}
+
+function showUserResetModal() {
+    new bootstrap.Modal(document.getElementById('userResetModal')).show();
+}
+
+function executeUserReset() {
+    const userId = document.getElementById('userIdInput').value;
+    const challengeIndex = document.getElementById('challengeIndexInput').value;
+    
+    if (!userId) {
+        showAlert('danger', 'User ID is required');
+        return;
+    }
+    
+    const requestBody = {
+        user_id: parseInt(userId)
+    };
+    
+    if (challengeIndex) {
+        requestBody.challenge_index = parseInt(challengeIndex);
+    }
+    
+    fetch('/admin/reset-user-attempts', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(requestBody)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showAlert('success', data.message);
+            bootstrap.Modal.getInstance(document.getElementById('userResetModal')).hide();
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showAlert('danger', data.error);
+        }
+    })
+    .catch(error => {
+        showAlert('danger', 'Failed to reset user attempts');
+        console.error(error);
+    });
+}
+
+// Utility Functions
+function showAlert(type, message) {
+    const alertDiv = document.createElement('div');
+    alertDiv.className = `alert alert-${type} alert-dismissible fade show`;
+    alertDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+    
+    const container = document.querySelector('.container');
+    container.insertBefore(alertDiv, container.firstChild);
+    
+    setTimeout(() => {
+        if (alertDiv.parentNode) {
+            alertDiv.remove();
+        }
+    }, 5000);
+}
+
+// Initialize tooltips and other components
+document.addEventListener('DOMContentLoaded', function() {
+    const tooltipTriggerList = [].slice.call(document.querySelectorAll('[title]'));
+    const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
+        return new bootstrap.Tooltip(tooltipTriggerEl);
+    });
+});
+</script>
+
+{% endblock %}

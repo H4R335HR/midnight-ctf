@@ -145,6 +145,50 @@ class SolvedChallenge(db.Model):
     solved_on = db.Column(db.DateTime, default=datetime.utcnow)
     flag_submitted = db.Column(db.String(256), nullable=False)
 
+class CTFSettings(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    max_attempts = db.Column(db.Integer, default=7, nullable=False)
+    created_on = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_on = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_by = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=True)
+    
+    updater = db.relationship('User', backref='ctf_settings_updated')
+    
+    @staticmethod
+    def get_current_settings():
+        """Get the current CTF settings (singleton pattern)"""
+        settings = CTFSettings.query.first()
+        if not settings:
+            settings = CTFSettings()
+            db.session.add(settings)
+            db.session.commit()
+        return settings
+
+class FailedAttempt(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    challenge_index = db.Column(db.Integer, nullable=False)
+    attempted_flag = db.Column(db.String(256), nullable=False)
+    attempted_on = db.Column(db.DateTime, default=datetime.utcnow)
+    ip_address = db.Column(db.String(45))  # Track IP for additional security
+    
+    user = db.relationship('User', backref='failed_attempts')
+    
+    @staticmethod
+    def get_failed_count(user_id, challenge_index):
+        """Get count of failed attempts for a user on a specific challenge"""
+        return FailedAttempt.query.filter_by(
+            user_id=user_id, 
+            challenge_index=challenge_index
+        ).count()
+    
+    @staticmethod
+    def clear_failed_attempts(user_id, challenge_index):
+        """Clear all failed attempts for a user on a specific challenge"""
+        FailedAttempt.query.filter_by(
+            user_id=user_id,
+            challenge_index=challenge_index
+        ).delete()
 
 
 # Forms
@@ -207,6 +251,16 @@ def get_client_ip():
     else:
         # Handle multiple IPs in X-Forwarded-For header
         return request.environ['HTTP_X_FORWARDED_FOR'].split(',')[0].strip()
+
+def get_remaining_attempts(user_id, challenge_index):
+    """Get remaining attempts for a user on a challenge"""
+    settings = CTFSettings.get_current_settings()
+    failed_count = FailedAttempt.get_failed_count(user_id, challenge_index)
+    return max(0, settings.max_attempts - failed_count)
+
+def is_attempt_limit_reached(user_id, challenge_index):
+    """Check if user has reached attempt limit for a challenge"""
+    return get_remaining_attempts(user_id, challenge_index) <= 0
 
 def get_location_from_ip(ip_address):
     """Get approximate location from IP address using a free service"""
@@ -524,28 +578,72 @@ def challenge(challenge_id):
         challenge_index=challenge_id
     ).first()
     
+    # Get attempt information
+    remaining_attempts = get_remaining_attempts(user.id, challenge_id)
+    attempt_limit_reached = is_attempt_limit_reached(user.id, challenge_id)
+    settings = CTFSettings.get_current_settings()
+    
     form = FlagSubmissionForm()
     if form.validate_on_submit():
+        # Check if user has reached attempt limit (unless already solved)
+        if not solved and attempt_limit_reached:
+            flash(f'You have reached the maximum number of attempts ({settings.max_attempts}) for this challenge. Contact an admin if you believe this is an error.', 'danger')
+            return render_template(
+                'challenge.html',
+                challenge={
+                    'challenge_name': f"Challenge {challenge_id + 1}",
+                    'description': get_challenge_description(challenge_id)
+                },
+                form=form,
+                solved=solved is not None,
+                remaining_attempts=0,
+                max_attempts=settings.max_attempts,
+                attempt_limit_reached=True
+            )
+        
         submitted_flag = form.flag.data.strip()
-        # Use email from session for flag generation (keeps compatibility)
         expected_flag = generate_expected_flag_for_challenge(challenge_id, session['email'])
         
         if submitted_flag == expected_flag:
             if not solved:
+                # Correct flag - create solve record and clear failed attempts
                 new_solve = SolvedChallenge(
                     user_id=user.id,
                     challenge_index=challenge_id,
                     flag_submitted=submitted_flag
                 )
                 db.session.add(new_solve)
+                
+                # Clear any failed attempts for this challenge
+                FailedAttempt.clear_failed_attempts(user.id, challenge_id)
                 db.session.commit()
             
             flash('Correct flag! Challenge solved!', 'success')
             return redirect(url_for('challenges'))
         else:
-            flash('Incorrect flag. Try again!', 'danger')
+            # Wrong flag - record failed attempt (unless already solved)
+            if not solved:
+                failed_attempt = FailedAttempt(
+                    user_id=user.id,
+                    challenge_index=challenge_id,
+                    attempted_flag=submitted_flag[:100],  # Limit stored flag length
+                    ip_address=get_client_ip()
+                )
+                db.session.add(failed_attempt)
+                db.session.commit()
+                
+                # Recalculate remaining attempts
+                remaining_attempts = get_remaining_attempts(user.id, challenge_id)
+                attempt_limit_reached = is_attempt_limit_reached(user.id, challenge_id)
+                
+                if attempt_limit_reached:
+                    flash(f'Incorrect flag. You have reached the maximum number of attempts ({settings.max_attempts}) for this challenge.', 'danger')
+                else:
+                    flash(f'Incorrect flag. You have {remaining_attempts} attempt(s) remaining.', 'warning')
+            else:
+                flash('Incorrect flag. Try again!', 'danger')
     
-    # Modified challenge description
+    # Challenge description
     challenge_description = get_challenge_description(challenge_id)
     
     return render_template(
@@ -555,7 +653,10 @@ def challenge(challenge_id):
             'description': challenge_description
         },
         form=form,
-        solved=solved is not None
+        solved=solved is not None,
+        remaining_attempts=remaining_attempts,
+        max_attempts=settings.max_attempts,
+        attempt_limit_reached=attempt_limit_reached and not solved
     )
 
 
@@ -1230,6 +1331,49 @@ def clear_email_whitelist():
         'message': f'Cleared {count} emails from whitelist'
     })
 
+@app.route('/admin/current-max-attempts')
+@login_required
+def get_current_max_attempts():
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    settings = CTFSettings.get_current_settings()
+    return jsonify({
+        'max_attempts': settings.max_attempts
+    })
+
+@app.route('/admin/export')
+@login_required  
+def admin_export():
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    export_type = request.args.get('type', 'users')
+    
+    if export_type == 'attempts':
+        # Export failed attempts data
+        attempts = FailedAttempt.query.all()
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(['User ID', 'Username', 'Challenge Index', 'Attempted Flag', 'Attempted On', 'IP Address'])
+        
+        for attempt in attempts:
+            writer.writerow([
+                attempt.user_id,
+                attempt.user.username,
+                attempt.challenge_index,
+                attempt.attempted_flag[:50] + '...' if len(attempt.attempted_flag) > 50 else attempt.attempted_flag,
+                attempt.attempted_on.strftime('%Y-%m-%d %H:%M:%S') if attempt.attempted_on else '',
+                attempt.ip_address
+            ])
+        
+        response = make_response(output.getvalue())
+        response.headers['Content-Type'] = 'text/csv'
+        response.headers['Content-Disposition'] = 'attachment; filename=failed_attempts_export.csv'
+        return response
+        
 @app.route('/admin/export-email-whitelist')
 @login_required
 def export_email_whitelist():
@@ -1257,6 +1401,158 @@ def export_email_whitelist():
     response.headers['Content-Disposition'] = 'attachment; filename=email_whitelist.csv'
     return response
 
+@app.route('/admin/ctf-settings')
+@login_required
+def admin_ctf_settings():
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        flash('Unauthorized access', 'danger')
+        return redirect(url_for('challenges'))
+    
+    settings = CTFSettings.get_current_settings()
+    
+    # Get attempt statistics
+    total_failed_attempts = FailedAttempt.query.count()
+    users_at_limit = db.session.query(FailedAttempt.user_id, FailedAttempt.challenge_index)\
+        .group_by(FailedAttempt.user_id, FailedAttempt.challenge_index)\
+        .having(db.func.count(FailedAttempt.id) >= settings.max_attempts).count()
+    
+    # Get challenge attempt stats
+    challenge_attempt_stats = []
+    for i in range(len(flag_mappings)):
+        total_attempts = FailedAttempt.query.filter_by(challenge_index=i).count()
+        unique_users_attempted = db.session.query(FailedAttempt.user_id)\
+            .filter_by(challenge_index=i).distinct().count()
+        users_at_limit_for_challenge = db.session.query(FailedAttempt.user_id)\
+            .filter_by(challenge_index=i)\
+            .group_by(FailedAttempt.user_id)\
+            .having(db.func.count(FailedAttempt.id) >= settings.max_attempts).count()
+        
+        challenge_attempt_stats.append({
+            'index': i,
+            'name': get_challenge_description(i),
+            'total_attempts': total_attempts,
+            'unique_users': unique_users_attempted,
+            'users_at_limit': users_at_limit_for_challenge
+        })
+    
+    return render_template('admin_ctf_settings.html', 
+                         settings=settings,
+                         total_failed_attempts=total_failed_attempts,
+                         users_at_limit=users_at_limit,
+                         challenge_stats=challenge_attempt_stats)
+
+@app.route('/admin/update-max-attempts', methods=['POST'])
+@login_required
+def update_max_attempts():
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    try:
+        new_max = int(request.json.get('max_attempts', 7))
+        if new_max < 1 or new_max > 100:
+            return jsonify({'error': 'Max attempts must be between 1 and 100'}), 400
+        
+        settings = CTFSettings.get_current_settings()
+        old_max = settings.max_attempts
+        settings.max_attempts = new_max
+        settings.updated_on = datetime.utcnow()
+        settings.updated_by = user.id
+        
+        db.session.commit()
+        
+        return jsonify({
+            'success': True,
+            'message': f'Max attempts updated from {old_max} to {new_max}',
+            'new_max': new_max
+        })
+        
+    except (ValueError, TypeError):
+        return jsonify({'error': 'Invalid max attempts value'}), 400
+
+@app.route('/admin/reset-user-attempts', methods=['POST'])
+@login_required
+def reset_user_attempts():
+    current_user = User.query.get(session['user_id'])
+    if not current_user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    user_id = request.json.get('user_id')
+    challenge_index = request.json.get('challenge_index')  # Optional - if None, reset all
+    
+    if not user_id:
+        return jsonify({'error': 'User ID required'}), 400
+    
+    target_user = User.query.get(user_id)
+    if not target_user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    if challenge_index is not None:
+        # Reset attempts for specific challenge
+        count = FailedAttempt.query.filter_by(
+            user_id=user_id,
+            challenge_index=challenge_index
+        ).count()
+        FailedAttempt.query.filter_by(
+            user_id=user_id,
+            challenge_index=challenge_index
+        ).delete()
+        message = f'Reset {count} failed attempts for {target_user.username} on Challenge {challenge_index + 1}'
+    else:
+        # Reset all attempts for user
+        count = FailedAttempt.query.filter_by(user_id=user_id).count()
+        FailedAttempt.query.filter_by(user_id=user_id).delete()
+        message = f'Reset all {count} failed attempts for {target_user.username}'
+    
+    db.session.commit()
+    
+    return jsonify({
+        'success': True,
+        'message': message
+    })
+
+@app.route('/admin/attempt-details/<int:user_id>/<int:challenge_index>')
+@login_required
+def attempt_details(user_id, challenge_index):
+    current_user = User.query.get(session['user_id'])
+    if not current_user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': 'User not found'}), 404
+    
+    attempts = FailedAttempt.query.filter_by(
+        user_id=user_id,
+        challenge_index=challenge_index
+    ).order_by(FailedAttempt.attempted_on.desc()).all()
+    
+    attempts_data = []
+    for attempt in attempts:
+        attempts_data.append({
+            'attempted_flag': attempt.attempted_flag,
+            'attempted_on': attempt.attempted_on.strftime('%Y-%m-%d %H:%M:%S'),
+            'ip_address': attempt.ip_address
+        })
+    
+    settings = CTFSettings.get_current_settings()
+    
+    return jsonify({
+        'user': {
+            'id': user.id,
+            'username': user.username,
+            'email': user.email
+        },
+        'challenge': {
+            'index': challenge_index,
+            'name': get_challenge_description(challenge_index)
+        },
+        'attempts': attempts_data,
+        'total_attempts': len(attempts_data),
+        'max_attempts': settings.max_attempts,
+        'is_at_limit': len(attempts_data) >= settings.max_attempts
+    })
 
 @app.route('/admin/user/<int:user_id>/details')
 @login_required
