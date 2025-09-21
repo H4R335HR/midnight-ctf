@@ -71,6 +71,32 @@
         </div>
     </div>
 </div>
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card bg-warning text-dark">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-8">
+                        <h6 class="card-title mb-0">
+                            <i class="fas fa-shield-alt me-2"></i>Challenge Attempt Limits
+                        </h6>
+                        <small>Control how many wrong attempts users can make per challenge</small>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="input-group">
+                            <span class="input-group-text">Max Attempts:</span>
+                            <input type="number" id="maxAttemptsInput" class="form-control" 
+                                value="7" min="1" max="100" style="max-width: 100px;">
+                            <button class="btn btn-primary" onclick="updateMaxAttempts()">
+                                <i class="fas fa-save"></i> Update
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 
 <!-- Main Admin Content -->
 <div class="row">
@@ -188,32 +214,7 @@
                 {% endfor %}
             </div>
         </div>
-        <div class="row mb-4">
-            <div class="col-12">
-                <div class="card bg-warning text-dark">
-                    <div class="card-body">
-                        <div class="row align-items-center">
-                            <div class="col-md-8">
-                                <h6 class="card-title mb-0">
-                                    <i class="fas fa-shield-alt me-2"></i>Challenge Attempt Limits
-                                </h6>
-                                <small>Control how many wrong attempts users can make per challenge</small>
-                            </div>
-                            <div class="col-md-4">
-                                <div class="input-group">
-                                    <span class="input-group-text">Max Attempts:</span>
-                                    <input type="number" id="maxAttemptsInput" class="form-control" 
-                                        value="7" min="1" max="100" style="max-width: 100px;">
-                                    <button class="btn btn-primary" onclick="updateMaxAttempts()">
-                                        <i class="fas fa-save"></i> Update
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+        
         <!-- Recent Activity -->
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
