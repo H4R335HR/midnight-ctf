@@ -72,48 +72,49 @@
     </div>
 </div>
 <div class="row mb-4">
-            <div class="col-12">
-                <div class="card bg-warning text-dark">
-                    <div class="card-body">
-                        <div class="row align-items-center">
-                            <div class="col-md-6">
-                                <h6 class="card-title mb-0">
-                                    <i class="fas fa-shield-alt me-2"></i>Challenge Attempt Limits
-                                </h6>
-                                <small>Control how many wrong attempts users can make per challenge</small>
+    <div class="col-12">
+        <div class="card border-warning" style="background-color: #2a2a2a !important;">
+            <div class="card-body">
+                <div class="row align-items-center">
+                    <div class="col-md-6">
+                        <h6 class="card-title mb-0" style="color: #ffc107 !important;">
+                            <i class="fas fa-shield-alt me-2"></i>Challenge Attempt Limits
+                        </h6>
+                        <small style="color: #e0e0e0 !important;">Control how many wrong attempts users can make per challenge</small>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="d-flex align-items-center justify-content-center">
+                            <button class="btn btn-outline-warning btn-sm me-2" onclick="adjustMaxAttempts(-1)" 
+                                    id="decreaseBtn" title="Decrease limit">
+                                <i class="fas fa-minus"></i>
+                            </button>
+                            <div class="text-center">
+                                <div class="badge fs-4 px-3 py-2" id="currentMaxAttempts" 
+                                     style="background-color: #ffc107 !important; color: #000 !important; font-weight: bold;">7</div>
+                                <div><small style="color: #e0e0e0 !important;">Max Attempts</small></div>
                             </div>
-                            <div class="col-md-3">
-                                <div class="d-flex align-items-center justify-content-center">
-                                    <button class="btn btn-outline-dark btn-sm me-2" onclick="adjustMaxAttempts(-1)" 
-                                            id="decreaseBtn" title="Decrease limit">
-                                        <i class="fas fa-minus"></i>
-                                    </button>
-                                    <div class="text-center">
-                                        <div class="badge bg-dark text-light fs-4 px-3 py-2" id="currentMaxAttempts">7</div>
-                                        <div><small class="text-muted">Max Attempts</small></div>
-                                    </div>
-                                    <button class="btn btn-outline-dark btn-sm ms-2" onclick="adjustMaxAttempts(1)" 
-                                            id="increaseBtn" title="Increase limit">
-                                        <i class="fas fa-plus"></i>
-                                    </button>
-                                </div>
-                            </div>
-                            <div class="col-md-3">
-                                <div class="d-grid gap-2">
-                                    <a href="/admin/ctf-settings" class="btn btn-outline-dark">
-                                        <i class="fas fa-cogs me-1"></i>Advanced Settings
-                                    </a>
-                                    <button class="btn btn-success btn-sm" onclick="saveMaxAttempts()" id="saveBtn" 
-                                            style="display: none;">
-                                        <i class="fas fa-save me-1"></i>Save Changes
-                                    </button>
-                                </div>
-                            </div>
+                            <button class="btn btn-outline-warning btn-sm ms-2" onclick="adjustMaxAttempts(1)" 
+                                    id="increaseBtn" title="Increase limit">
+                                <i class="fas fa-plus"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="d-grid gap-2">
+                            <a href="/admin/ctf-settings" class="btn btn-outline-info">
+                                <i class="fas fa-cogs me-1"></i>Advanced Settings
+                            </a>
+                            <button class="btn btn-success btn-sm" onclick="saveMaxAttempts()" id="saveBtn" 
+                                    style="display: none;">
+                                <i class="fas fa-save me-1"></i>Save Changes
+                            </button>
                         </div>
                     </div>
                 </div>
             </div>
         </div>
+    </div>
+</div>
 
 <!-- Main Admin Content -->
 <div class="row">
@@ -411,58 +412,9 @@
 </div>
 
 <style>
+/* Minimal admin-specific styles - base template handles most styling */
 .opacity-75 {
     opacity: 0.75;
-}
-
-/* Dark theme compatibility */
-.card {
-    background-color: #1e1e1e !important;
-    border-color: #333 !important;
-    box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.3);
-    transition: box-shadow 0.15s ease-in-out;
-}
-
-.card:hover {
-    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.5);
-}
-
-.card-header {
-    background-color: #2a2a2a !important;
-    border-bottom-color: #444 !important;
-    color: #e0e0e0 !important;
-}
-
-.table {
-    color: #e0e0e0 !important;
-}
-
-.table-light {
-    background-color: #2a2a2a !important;
-    color: #e0e0e0 !important;
-}
-
-.table-striped > tbody > tr:nth-of-type(odd) > td {
-    background-color: #252525 !important;
-}
-
-.badge {
-    font-weight: 500;
-}
-
-.progress {
-    background-color: #333 !important;
-}
-
-.table th {
-    border-top: none;
-    font-weight: 600;
-    font-size: 0.875rem;
-    border-bottom-color: #444 !important;
-}
-
-.table td {
-    border-bottom-color: #444 !important;
 }
 
 .btn-group-sm > .btn {
@@ -470,49 +422,21 @@
     font-size: 0.875rem;
 }
 
-.list-group-item {
-    background-color: #1e1e1e !important;
-    border-color: #444 !important;
-    color: #e0e0e0 !important;
+/* Only add these if not already in base template */
+.border-primary {
+    border-color: #007bff !important;
 }
 
-.list-group-item:last-child {
-    border-bottom: none;
+.border-warning {
+    border-color: #ffc107 !important;
 }
 
-.bg-light {
-    background-color: #2a2a2a !important;
+.border-info {
+    border-color: #17a2b8 !important;
 }
 
-.text-muted {
-    color: #6c757d !important;
-}
-
-.modal-content {
-    background-color: #1e1e1e !important;
-    border-color: #333 !important;
-}
-
-.modal-header {
-    border-bottom-color: #444 !important;
-}
-
-.dropdown-menu {
-    background-color: #2a2a2a !important;
-    border-color: #444 !important;
-}
-
-.dropdown-item {
-    color: #e0e0e0 !important;
-}
-
-.dropdown-item:hover {
-    background-color: #333 !important;
-    color: #fff !important;
-}
-
-.table > :not(caption) > * > * {
-  background-color: #343434 !important;
+.border-success {
+    border-color: #28a745 !important;
 }
 </style>
 
