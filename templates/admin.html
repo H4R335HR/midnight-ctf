@@ -412,6 +412,63 @@
 </div>
 
 <style>
+body {
+    padding-top: 60px;
+    padding-bottom: 40px;
+    background-color: #121212;
+    color: #e0e0e0;
+}
+.card {
+    background-color: #1e1e1e;
+    border-color: #333;
+    margin-bottom: 20px;
+}
+.solved {
+    border-left: 5px solid #198754;
+}
+.nav-link {
+    color: #e0e0e0;
+}
+.nav-link:hover {
+    color: #ffffff;
+}
+.btn-primary {
+    background-color: #007bff;
+    border-color: #007bff;
+}
+.btn-success {
+    background-color: #198754;
+    border-color: #198754;
+}
+.alert {
+    margin-top: 20px;
+}
+.form-control {
+    background-color: #2a2a2a;
+    border-color: #444;
+    color: #e0e0e0;
+}
+.form-control:focus {
+    background-color: #2a2a2a;
+    color: #e0e0e0;
+}
+.table {
+    color: #e0e0e0;
+}
+.ctf-header {
+    text-align: center;
+    margin-bottom: 30px;
+}
+.ctf-header h1 {
+    color: #007bff;
+    font-size: 3rem;
+    margin-bottom: 0;
+}
+.ctf-header p {
+    color: #6c757d;
+    font-size: 1.2rem;
+}
+
 /* Minimal admin-specific styles - base template handles most styling */
 .opacity-75 {
     opacity: 0.75;
@@ -441,6 +498,63 @@
 
 th{
     background-color: #1e1e1e !important;
+}
+
+/* Simple Users Management Table Styles */
+#users-table {
+    border-collapse: collapse;
+    width: 100%;
+    background-color: #2a2a2a;
+    border: 1px solid #444;
+}
+
+#users-table th {
+    background-color: #333 !important;
+    color: #e0e0e0 !important;
+    padding: 12px 8px;
+    text-align: left;
+    border-bottom: 2px solid #555;
+    font-weight: 600;
+    font-size: 0.9rem;
+}
+
+#users-table td {
+    padding: 10px 8px;
+    border-bottom: 1px solid #444;
+    color: #e0e0e0;
+    vertical-align: middle;
+    background-color: #2a2a2a !important;
+}
+
+#users-table tbody tr {
+    background-color: #2a2a2a !important;
+}
+
+/* Remove any hover effects */
+#users-table tbody tr:hover {
+    background-color: #2a2a2a !important;
+}
+
+/* Clean text styling for the users table */
+#users-table .badge {
+    font-size: 0.75rem;
+}
+
+#users-table .text-muted {
+    color: #999 !important;
+}
+
+#users-table .text-info {
+    color: #17a2b8 !important;
+}
+
+#users-table .progress {
+    height: 4px;
+    background-color: #444;
+}
+
+#users-table .progress-bar {
+    background-color: #28a745;
 }
 </style>
 
