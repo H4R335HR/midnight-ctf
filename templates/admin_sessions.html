@@ -52,8 +52,7 @@
                             {% endif %}
                         </div>
                         <div class="text-end">
-                            {% set last_activity_ist = utc_to_ist(session.last_activity) %}
-                            <small class="text-muted">{{ last_activity_ist.strftime('%d %b %H:%M') if last_activity_ist else 'N/A' }}</small>
+                            <small class="text-muted" data-utc-time="{{ session.last_activity.isoformat() }}">Loading...</small>
                             <br><small class="text-info">IST</small><br>
                             <button class="btn btn-sm btn-outline-danger" onclick="terminateSession('{{ session.id }}')">
                                 <i class="fas fa-times"></i>
@@ -134,42 +133,17 @@
                                 {{ session.browser }}
                             </div>
                         </td>
-                        <td class="text-muted small">
-                            {% set login_time_ist = utc_to_ist(session.login_time) %}
-                            {{ login_time_ist.strftime('%d %b %H:%M') if login_time_ist else 'N/A' }}
-                            <br><small class="text-info">IST</small>
+                        <td class="text-muted small" data-login-time="{{ session.login_time.isoformat() }}">
+                            Loading...
                         </td>
-                        <td class="text-muted small">
-                            {% set last_activity_ist = utc_to_ist(session.last_activity) %}
-                            <span title="{{ last_activity_ist.strftime('%d %b %Y %H:%M:%S IST') if last_activity_ist else 'N/A' }}">
-                                {{ last_activity_ist.strftime('%H:%M') if last_activity_ist else 'N/A' }}
-                            </span>
-                            {% if last_activity_ist %}
-                                {% set minutes_ago = ((current_time.replace(tzinfo=None) - last_activity_ist.replace(tzinfo=None)).total_seconds() / 60) | int %}
-                                {% if minutes_ago < 5 %}
-                                    <br><span class="badge bg-success">Active now</span>
-                                {% elif minutes_ago < 30 %}
-                                    <br><span class="badge bg-warning">{{ minutes_ago }}m ago</span>
-                                {% elif minutes_ago < 1440 %}
-                                    <br><span class="badge bg-secondary">{{ (minutes_ago / 60) | int }}h ago</span>
-                                {% else %}
-                                    <br><span class="badge bg-secondary">{{ (minutes_ago / 1440) | int }}d ago</span>
-                                {% endif %}
-                            {% endif %}
+                        <td class="text-muted small" data-last-activity="{{ session.last_activity.isoformat() }}">
+                            Loading...
                         </td>
-                        <td class="text-muted small">
-                            {% if session.login_time and session.last_activity %}
-                                {% set duration_seconds = (session.last_activity - session.login_time).total_seconds() %}
-                                {% set duration_hours = (duration_seconds / 3600) | int %}
-                                {% set duration_minutes = ((duration_seconds % 3600) / 60) | int %}
-                                {% if duration_hours > 0 %}
-                                    {{ duration_hours }}h {{ duration_minutes }}m
-                                {% else %}
-                                    {{ duration_minutes }}m
-                                {% endif %}
-                            {% else %}
-                                N/A
-                            {% endif %}
+                        <td class="text-muted small" 
+                            data-duration 
+                            data-login="{{ session.login_time.isoformat() }}" 
+                            data-last="{{ session.last_activity.isoformat() }}">
+                            Loading...
                         </td>
                         <td>
                             <div class="btn-group btn-group-sm">
@@ -352,6 +326,131 @@
 </style>
 
 <script>
+// Timezone conversion functions
+function formatToIST(utcDateString) {
+    if (!utcDateString) return 'N/A';
+    
+    const utcDate = new Date(utcDateString);
+    const istOptions = {
+        timeZone: 'Asia/Kolkata',
+        month: 'short',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    };
+    
+    return utcDate.toLocaleString('en-IN', istOptions);
+}
+
+function formatTimeOnly(utcDateString) {
+    if (!utcDateString) return 'N/A';
+    
+    const utcDate = new Date(utcDateString);
+    const istOptions = {
+        timeZone: 'Asia/Kolkata',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
+    };
+    
+    return utcDate.toLocaleString('en-IN', istOptions);
+}
+
+function getTimeAgo(utcDateString) {
+    if (!utcDateString) return '';
+    
+    const utcDate = new Date(utcDateString);
+    const now = new Date();
+    const diffMs = now - utcDate;
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    
+    if (diffMins < 5) return '<span class="badge bg-success">Active now</span>';
+    if (diffMins < 60) return `<span class="badge bg-warning">${diffMins}m ago</span>`;
+    if (diffMins < 1440) return `<span class="badge bg-secondary">${Math.floor(diffMins/60)}h ago</span>`;
+    return `<span class="badge bg-secondary">${Math.floor(diffMins/1440)}d ago</span>`;
+}
+
+function calculateDuration(loginTime, lastActivity) {
+    if (!loginTime || !lastActivity) return 'N/A';
+    
+    const start = new Date(loginTime);
+    const end = new Date(lastActivity);
+    const diffMs = end - start;
+    const diffMins = Math.floor(diffMs / (1000 * 60));
+    const hours = Math.floor(diffMins / 60);
+    const minutes = diffMins % 60;
+    
+    if (hours > 0) return `${hours}h ${minutes}m`;
+    return `${minutes}m`;
+}
+
+function formatLastActivity(utcDateString) {
+    if (!utcDateString) return 'N/A';
+    
+    const utcDate = new Date(utcDateString);
+    const istDate = new Date(utcDate.toLocaleString("en-US", {timeZone: "Asia/Kolkata"}));
+    const timeStr = formatTimeOnly(utcDateString);
+    const fullTimeStr = formatToIST(utcDateString);
+    
+    return `Last activity: ${timeStr} IST`;
+}
+
+// Convert all timestamps on page load
+document.addEventListener('DOMContentLoaded', function() {
+    convertTimestampsToIST();
+    
+    // Update time ago badges every minute
+    setInterval(updateTimeAgoBadges, 60000);
+});
+
+function convertTimestampsToIST() {
+    // Convert login times
+    document.querySelectorAll('[data-login-time]').forEach(element => {
+        const utcTime = element.getAttribute('data-login-time');
+        const istTime = formatToIST(utcTime);
+        element.innerHTML = istTime + '<br><small class="text-info">IST</small>';
+    });
+    
+    // Convert last activity times
+    document.querySelectorAll('[data-last-activity]').forEach(element => {
+        const utcTime = element.getAttribute('data-last-activity');
+        const timeOnly = formatTimeOnly(utcTime);
+        const timeAgo = getTimeAgo(utcTime);
+        const fullTime = formatToIST(utcTime);
+        element.innerHTML = `
+            <span title="${fullTime} IST">${timeOnly}</span>
+            <br>${timeAgo}
+        `;
+    });
+    
+    // Convert durations
+    document.querySelectorAll('[data-duration]').forEach(element => {
+        const loginTime = element.getAttribute('data-login');
+        const lastActivity = element.getAttribute('data-last');
+        element.textContent = calculateDuration(loginTime, lastActivity);
+    });
+    
+    // Convert UTC times in alert panels
+    document.querySelectorAll('[data-utc-time]').forEach(element => {
+        const utcTime = element.getAttribute('data-utc-time');
+        element.textContent = formatToIST(utcTime);
+    });
+}
+
+function updateTimeAgoBadges() {
+    document.querySelectorAll('[data-last-activity]').forEach(element => {
+        const utcTime = element.getAttribute('data-last-activity');
+        const timeOnly = formatTimeOnly(utcTime);
+        const timeAgo = getTimeAgo(utcTime);
+        const fullTime = formatToIST(utcTime);
+        element.innerHTML = `
+            <span title="${fullTime} IST">${timeOnly}</span>
+            <br>${timeAgo}
+        `;
+    });
+}
+
 function loadRecentUsers() {
     const loadBtn = document.querySelector('button[onclick="loadRecentUsers()"]');
     loadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
@@ -363,7 +462,9 @@ function loadRecentUsers() {
             if (data.users) {
                 const content = `
                     <div class="row">
-                        ${data.users.map(user => `
+                        ${data.users.map(user => {
+                            const lastActivity = user.last_activity ? formatToIST(user.last_activity) + ' IST' : 'Never';
+                            return `
                             <div class="col-md-6 col-lg-4 mb-3">
                                 <div class="card user-card ${user.has_active_sessions ? 'user-status-active' : 'user-status-inactive'}" onclick="viewUserSessions(${user.id})">
                                     <div class="card-body p-3">
@@ -386,13 +487,13 @@ function loadRecentUsers() {
                                             </small>
                                             <br>
                                             <small class="text-muted">
-                                                Last seen: ${user.last_activity}
+                                                Last seen: ${lastActivity}
                                             </small>
                                         </div>
                                     </div>
                                 </div>
                             </div>
-                        `).join('')}
+                        `}).join('')}
                     </div>
                     ${data.users.length === 0 ? '<p class="text-center text-muted">No users found with recent sessions.</p>' : ''}
                 `;
@@ -507,7 +608,10 @@ function viewUserSessions(userId) {
                                 </tr>
                             </thead>
                             <tbody>
-                                ${data.sessions.map(session => `
+                                ${data.sessions.map(session => {
+                                    const loginTime = session.login_time ? formatToIST(session.login_time) + ' IST' : 'N/A';
+                                    const lastActivity = session.last_activity ? formatToIST(session.last_activity) + ' IST' : 'N/A';
+                                    return `
                                     <tr class="${session.is_active ? 'table-success' : 'table-secondary'}">
                                         <td class="font-monospace">${session.ip_address}</td>
                                         <td>
@@ -515,8 +619,8 @@ function viewUserSessions(userId) {
                                             <small class="text-muted">${session.browser} on ${session.operating_system}</small>
                                         </td>
                                         <td>${session.location || 'Unknown'}</td>
-                                        <td class="small">${session.login_time}</td>
-                                        <td class="small">${session.last_activity}</td>
+                                        <td class="small">${loginTime}</td>
+                                        <td class="small">${lastActivity}</td>
                                         <td>
                                             <span class="badge ${session.is_active ? 'bg-success' : 'bg-secondary'}">
                                                 ${session.is_active ? 'Active' : 'Inactive'}
@@ -531,9 +635,16 @@ function viewUserSessions(userId) {
                                             }
                                         </td>
                                     </tr>
-                                `).join('')}
+                                `}).join('')}
                             </tbody>
                         </table>
+                    </div>
+                    
+                    <div class="mt-3">
+                        <small class="text-muted">
+                            <i class="fas fa-info-circle me-1"></i>
+                            All times are displayed in Indian Standard Time (IST)
+                        </small>
                     </div>
                 `;
                 

@@ -8,7 +8,6 @@ import json
 import csv
 import requests
 import io
-import pytz
 from werkzeug.utils import secure_filename
 from io import StringIO
 from flask import jsonify, make_response, request
@@ -20,8 +19,6 @@ from wtforms.validators import DataRequired, Email, ValidationError, Length
 from datetime import datetime, timedelta
 from functools import wraps
 from user_agents import parse
-
-IST = pytz.timezone('Asia/Kolkata')
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -194,18 +191,6 @@ class FlagSubmissionForm(FlaskForm):
 
 
 # Helper functions
-def utc_to_ist(utc_dt):
-    """Convert UTC datetime to IST"""
-    if utc_dt is None:
-        return None
-    if utc_dt.tzinfo is None:
-        utc_dt = pytz.utc.localize(utc_dt)
-    return utc_dt.astimezone(IST)
-
-def ist_now():
-    """Get current time in IST"""
-    return datetime.now(IST)
-
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -669,14 +654,13 @@ def admin_sessions():
                 'different_ips': has_different_ips
             })
     
-    # Convert times to IST for template
-    current_time_ist = ist_now()
+    # Send UTC time to frontend - JavaScript will handle conversion
+    current_time = datetime.utcnow()
     
     return render_template('admin_sessions.html', 
                          active_sessions=active_sessions,
                          multiple_sessions=users_with_multiple_sessions,
-                         current_time=current_time_ist,
-                         utc_to_ist=utc_to_ist)
+                         current_time=current_time)
 
 @app.route('/admin/session/<session_id>/terminate', methods=['POST'])
 @login_required
@@ -719,9 +703,6 @@ def recent_users_with_sessions():
     
     users_data = []
     for user_obj, total_sessions, last_activity, active_sessions in users_with_sessions:
-        # Convert UTC to IST for display
-        last_activity_ist = utc_to_ist(last_activity) if last_activity else None
-        
         users_data.append({
             'id': user_obj.id,
             'username': user_obj.username,
@@ -730,7 +711,7 @@ def recent_users_with_sessions():
             'total_sessions': total_sessions,
             'active_sessions': active_sessions or 0,
             'has_active_sessions': (active_sessions or 0) > 0,
-            'last_activity': last_activity_ist.strftime('%d %b %Y %H:%M IST') if last_activity_ist else 'Never'
+            'last_activity': last_activity.isoformat() if last_activity else None  # Send ISO format for JS
         })
     
     return jsonify({
@@ -738,6 +719,7 @@ def recent_users_with_sessions():
         'users': users_data,
         'total_users': len(users_data)
     })
+
 
 @app.route('/admin/user/<int:user_id>/sessions')
 @login_required
@@ -759,10 +741,6 @@ def user_sessions(user_id):
     
     sessions_data = []
     for sess in sessions:
-        # Convert times to IST
-        login_time_ist = utc_to_ist(sess.login_time)
-        last_activity_ist = utc_to_ist(sess.last_activity)
-        
         sessions_data.append({
             'id': sess.id,
             'ip_address': sess.ip_address,
@@ -770,8 +748,8 @@ def user_sessions(user_id):
             'operating_system': sess.operating_system,
             'device': sess.device,
             'location': f"{sess.location_city}, {sess.location_country}" if sess.location_city else sess.location_country,
-            'login_time': login_time_ist.strftime('%d %b %Y %H:%M IST') if login_time_ist else 'N/A',
-            'last_activity': last_activity_ist.strftime('%d %b %Y %H:%M IST') if last_activity_ist else 'N/A',
+            'login_time': sess.login_time.isoformat() if sess.login_time else None,  # Send ISO format
+            'last_activity': sess.last_activity.isoformat() if sess.last_activity else None,  # Send ISO format
             'is_active': sess.is_active,
             'user_agent': sess.user_agent
         })
@@ -785,7 +763,6 @@ def user_sessions(user_id):
         'sessions': sessions_data,
         'has_multiple_active': user.has_multiple_active_sessions()
     })
-
 
 @app.route('/admin/export')
 @login_required
