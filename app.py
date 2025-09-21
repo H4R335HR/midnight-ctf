@@ -443,7 +443,7 @@ def register():
         return redirect(url_for('login'))
     
     return render_template('register.html', form=form)
-    
+
 @app.route('/challenges')
 @login_required
 def challenges():
@@ -823,12 +823,36 @@ def delete_user(user_id):
     if target_user.is_admin:
         return jsonify({'error': 'Cannot delete admin users'}), 400
     
-    # Delete user's solves first
-    SolvedChallenge.query.filter_by(user_id=user_id).delete()
-    db.session.delete(target_user)
-    db.session.commit()
-    
-    return jsonify({'success': True, 'message': f'User {target_user.username} deleted'})
+    try:
+        # Delete all related records in the correct order to avoid foreign key constraint violations
+        
+        # 1. Delete user's solved challenges
+        SolvedChallenge.query.filter_by(user_id=user_id).delete()
+        
+        # 2. Delete user's sessions
+        UserSession.query.filter_by(user_id=user_id).delete()
+        
+        # 3. Handle AllowedEmail records created by this user
+        # Set added_by to NULL instead of deleting the records
+        AllowedEmail.query.filter_by(added_by=user_id).update({'added_by': None})
+        
+        # 4. Handle RegistrationSettings created by this user
+        # Set created_by to NULL instead of deleting the records
+        RegistrationSettings.query.filter_by(created_by=user_id).update({'created_by': None})
+        
+        # 5. Finally delete the user
+        db.session.delete(target_user)
+        
+        # Commit all changes
+        db.session.commit()
+        
+        return jsonify({'success': True, 'message': f'User {target_user.username} deleted successfully'})
+        
+    except Exception as e:
+        # Rollback on error
+        db.session.rollback()
+        app.logger.error(f"Error deleting user {user_id}: {str(e)}")
+        return jsonify({'error': f'Failed to delete user: {str(e)}'}), 500
 
 
 @app.route('/admin/reset_challenges', methods=['POST'])
