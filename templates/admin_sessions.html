@@ -13,6 +13,19 @@
     </div>
 </div>
 
+<!-- New Section: Recent Users with Sessions -->
+<div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0"><i class="fas fa-users me-2"></i>All Users with Recent Sessions</h5>
+        <button class="btn btn-sm btn-outline-primary" onclick="loadRecentUsers()">
+            <i class="fas fa-sync-alt"></i> Load Recent Users
+        </button>
+    </div>
+    <div class="card-body" id="recent-users-section">
+        <p class="text-muted text-center">Click "Load Recent Users" to see all users who have had sessions in the last 30 days</p>
+    </div>
+</div>
+
 <!-- Alert Panel for Multiple Sessions -->
 {% if multiple_sessions %}
 <div class="alert alert-warning">
@@ -39,7 +52,9 @@
                             {% endif %}
                         </div>
                         <div class="text-end">
-                            <small class="text-muted">{{ session.last_activity.strftime('%m-%d %H:%M') }}</small><br>
+                            {% set last_activity_ist = utc_to_ist(session.last_activity) %}
+                            <small class="text-muted">{{ last_activity_ist.strftime('%d %b %H:%M') if last_activity_ist else 'N/A' }}</small>
+                            <br><small class="text-info">IST</small><br>
                             <button class="btn btn-sm btn-outline-danger" onclick="terminateSession('{{ session.id }}')">
                                 <i class="fas fa-times"></i>
                             </button>
@@ -120,28 +135,40 @@
                             </div>
                         </td>
                         <td class="text-muted small">
-                            {{ session.login_time.strftime('%Y-%m-%d %H:%M') }}
+                            {% set login_time_ist = utc_to_ist(session.login_time) %}
+                            {{ login_time_ist.strftime('%d %b %H:%M') if login_time_ist else 'N/A' }}
+                            <br><small class="text-info">IST</small>
                         </td>
                         <td class="text-muted small">
-                            <span title="{{ session.last_activity.strftime('%Y-%m-%d %H:%M:%S') }}">
-                                {{ session.last_activity.strftime('%H:%M') }}
+                            {% set last_activity_ist = utc_to_ist(session.last_activity) %}
+                            <span title="{{ last_activity_ist.strftime('%d %b %Y %H:%M:%S IST') if last_activity_ist else 'N/A' }}">
+                                {{ last_activity_ist.strftime('%H:%M') if last_activity_ist else 'N/A' }}
                             </span>
-                            {% set minutes_ago = ((current_time - session.last_activity).total_seconds() / 60) | int %}
-                            {% if minutes_ago < 5 %}
-                                <span class="badge bg-success">Active</span>
-                            {% elif minutes_ago < 30 %}
-                                <span class="badge bg-warning">{{ minutes_ago }}m ago</span>
-                            {% else %}
-                                <span class="badge bg-secondary">{{ minutes_ago }}m ago</span>
+                            {% if last_activity_ist %}
+                                {% set minutes_ago = ((current_time.replace(tzinfo=None) - last_activity_ist.replace(tzinfo=None)).total_seconds() / 60) | int %}
+                                {% if minutes_ago < 5 %}
+                                    <br><span class="badge bg-success">Active now</span>
+                                {% elif minutes_ago < 30 %}
+                                    <br><span class="badge bg-warning">{{ minutes_ago }}m ago</span>
+                                {% elif minutes_ago < 1440 %}
+                                    <br><span class="badge bg-secondary">{{ (minutes_ago / 60) | int }}h ago</span>
+                                {% else %}
+                                    <br><span class="badge bg-secondary">{{ (minutes_ago / 1440) | int }}d ago</span>
+                                {% endif %}
                             {% endif %}
                         </td>
                         <td class="text-muted small">
-                            {% set duration_hours = ((session.last_activity - session.login_time).total_seconds() / 3600) | int %}
-                            {% set duration_minutes = (((session.last_activity - session.login_time).total_seconds() % 3600) / 60) | int %}
-                            {% if duration_hours > 0 %}
-                                {{ duration_hours }}h {{ duration_minutes }}m
+                            {% if session.login_time and session.last_activity %}
+                                {% set duration_seconds = (session.last_activity - session.login_time).total_seconds() %}
+                                {% set duration_hours = (duration_seconds / 3600) | int %}
+                                {% set duration_minutes = ((duration_seconds % 3600) / 60) | int %}
+                                {% if duration_hours > 0 %}
+                                    {{ duration_hours }}h {{ duration_minutes }}m
+                                {% else %}
+                                    {{ duration_minutes }}m
+                                {% endif %}
                             {% else %}
-                                {{ duration_minutes }}m
+                                N/A
                             {% endif %}
                         </td>
                         <td>
@@ -304,9 +331,87 @@
 .modal-header {
     border-bottom-color: #444 !important;
 }
+
+.user-card {
+    transition: all 0.2s ease-in-out;
+    cursor: pointer;
+}
+
+.user-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.user-status-active {
+    border-left: 4px solid #28a745;
+}
+
+.user-status-inactive {
+    border-left: 4px solid #6c757d;
+}
 </style>
 
 <script>
+function loadRecentUsers() {
+    const loadBtn = document.querySelector('button[onclick="loadRecentUsers()"]');
+    loadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Loading...';
+    loadBtn.disabled = true;
+    
+    fetch('/admin/recent-users-with-sessions')
+        .then(response => response.json())
+        .then(data => {
+            if (data.users) {
+                const content = `
+                    <div class="row">
+                        ${data.users.map(user => `
+                            <div class="col-md-6 col-lg-4 mb-3">
+                                <div class="card user-card ${user.has_active_sessions ? 'user-status-active' : 'user-status-inactive'}" onclick="viewUserSessions(${user.id})">
+                                    <div class="card-body p-3">
+                                        <div class="d-flex justify-content-between align-items-start">
+                                            <div>
+                                                <h6 class="mb-1">${user.username}</h6>
+                                                <small class="text-muted">${user.email}</small>
+                                                ${user.is_admin ? '<br><span class="badge bg-danger mt-1">Admin</span>' : ''}
+                                            </div>
+                                            <div class="text-end">
+                                                <span class="badge ${user.has_active_sessions ? 'bg-success' : 'bg-secondary'}">
+                                                    ${user.has_active_sessions ? 'Online' : 'Offline'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div class="mt-2">
+                                            <small class="text-info">
+                                                <i class="fas fa-clock me-1"></i>
+                                                Total sessions: ${user.total_sessions}
+                                            </small>
+                                            <br>
+                                            <small class="text-muted">
+                                                Last seen: ${user.last_activity}
+                                            </small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                    ${data.users.length === 0 ? '<p class="text-center text-muted">No users found with recent sessions.</p>' : ''}
+                `;
+                
+                document.getElementById('recent-users-section').innerHTML = content;
+            } else {
+                showAlert('danger', 'Failed to load recent users');
+            }
+        })
+        .catch(error => {
+            showAlert('danger', 'An error occurred while loading recent users');
+            console.error(error);
+        })
+        .finally(() => {
+            loadBtn.innerHTML = '<i class="fas fa-sync-alt"></i> Refresh';
+            loadBtn.disabled = false;
+        });
+}
+
 function terminateSession(sessionId) {
     if (confirm('Are you sure you want to terminate this session? The user will be logged out immediately.')) {
         fetch(`/admin/session/${sessionId}/terminate`, {
@@ -356,9 +461,16 @@ function viewSessionDetails(sessionId) {
                 
                 <div class="mt-3">
                     <h6>Actions</h6>
-                    <button class="btn btn-danger" onclick="terminateSession('${sessionId}'); $('#sessionDetailsModal').modal('hide');">
+                    <button class="btn btn-danger" onclick="terminateSession('${sessionId}'); bootstrap.Modal.getInstance(document.getElementById('sessionDetailsModal')).hide();">
                         <i class="fas fa-sign-out-alt me-1"></i>Terminate Session
                     </button>
+                </div>
+                
+                <div class="mt-3">
+                    <small class="text-muted">
+                        <i class="fas fa-info-circle me-1"></i>
+                        All times are displayed in Indian Standard Time (IST)
+                    </small>
                 </div>
             </div>
         </div>
