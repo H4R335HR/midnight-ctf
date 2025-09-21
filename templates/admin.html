@@ -1,222 +1,358 @@
 {% extends 'base.html' %}
-{% block title %}Session Management - Admin Dashboard{% endblock %}
+{% block title %}Admin Dashboard - Midnight CTF{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="fas fa-desktop me-2"></i>Session Management</h2>
-    <div>
-        <button class="btn btn-outline-warning" onclick="cleanupOldSessions()">
-            <i class="fas fa-broom me-1"></i>Cleanup Old Sessions
-        </button>
-        <a href="/admin" class="btn btn-outline-secondary">
-            <i class="fas fa-arrow-left me-1"></i>Back to Admin
-        </a>
-    </div>
+    <h2><i class="fas fa-shield-alt me-2"></i>Admin Dashboard</h2>
+    <span class="badge bg-danger fs-6">Admin Only</span>
 </div>
 
-<!-- Alert Panel for Multiple Sessions -->
-{% if multiple_sessions %}
-<div class="alert alert-warning">
-    <h5><i class="fas fa-exclamation-triangle me-2"></i>Users with Multiple Active Sessions</h5>
-    <div class="row">
-        {% for item in multiple_sessions %}
-        <div class="col-md-6 mb-3">
-            <div class="card border-warning">
-                <div class="card-header">
-                    <strong>{{ item.user.username }}</strong>
-                    {% if item.different_ips %}
-                        <span class="badge bg-danger ms-2">Different IPs</span>
-                    {% endif %}
-                    <span class="badge bg-warning ms-1">{{ item.sessions|length }} Sessions</span>
-                </div>
-                <div class="card-body p-2">
-                    {% for session in item.sessions %}
-                    <div class="d-flex justify-content-between align-items-center mb-2 p-2 bg-light rounded">
-                        <div>
-                            <small><strong>{{ session.ip_address }}</strong></small><br>
-                            <small class="text-muted">{{ session.browser }} on {{ session.operating_system }}</small>
-                            {% if session.location_city %}
-                            <br><small class="text-info">{{ session.location_city }}, {{ session.location_country }}</small>
-                            {% endif %}
-                        </div>
-                        <div class="text-end">
-                            <small class="text-muted">{{ session.last_activity.strftime('%m-%d %H:%M') }}</small><br>
-                            <button class="btn btn-sm btn-outline-danger" onclick="terminateSession('{{ session.id }}')">
-                                <i class="fas fa-times"></i>
-                            </button>
-                        </div>
+<!-- Overview Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Total Users</h5>
+                        <h2 class="mb-0" id="total-users">{{ total_users }}</h2>
                     </div>
-                    {% endfor %}
+                    <div class="align-self-center">
+                        <i class="fas fa-users fa-2x opacity-75"></i>
+                    </div>
                 </div>
             </div>
         </div>
-        {% endfor %}
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-success text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Total Challenges</h5>
+                        <h2 class="mb-0">{{ challenges|length }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-flag fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-info text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Total Solves</h5>
+                        <h2 class="mb-0" id="total-solves">{{ solves|length }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-check-circle fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-3">
+        <div class="card bg-warning text-white">
+            <div class="card-body">
+                <div class="d-flex justify-content-between">
+                    <div>
+                        <h5 class="card-title">Active Players</h5>
+                        <h2 class="mb-0" id="active-players">{{ active_users }}</h2>
+                    </div>
+                    <div class="align-self-center">
+                        <i class="fas fa-user-check fa-2x opacity-75"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
     </div>
 </div>
-{% endif %}
 
-<!-- Active Sessions Table -->
-<div class="card">
-    <div class="card-header d-flex justify-content-between align-items-center">
-        <h5 class="mb-0"><i class="fas fa-users me-2"></i>All Active Sessions ({{ active_sessions|length }})</h5>
-        <button class="btn btn-sm btn-outline-primary" onclick="refreshSessions()">
-            <i class="fas fa-sync-alt"></i> Refresh
-        </button>
-    </div>
-    <div class="card-body p-0">
-        <div class="table-responsive">
-            <table class="table table-hover mb-0" id="sessions-table">
-                <thead class="table-light">
-                    <tr>
-                        <th>User</th>
-                        <th>IP Address</th>
-                        <th>Location</th>
-                        <th>Device Info</th>
-                        <th>Browser</th>
-                        <th>Login Time</th>
-                        <th>Last Activity</th>
-                        <th>Duration</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for session, user in active_sessions %}
-                    <tr id="session-{{ session.id }}">
-                        <td>
-                            <div class="d-flex align-items-center">
-                                <div>
+<!-- Main Admin Content -->
+<div class="row">
+    <!-- Users Management -->
+    <div class="col-lg-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-users me-2"></i>Users Management</h5>
+                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#usersTable">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
+            </div>
+            <div class="card-body p-0 collapse show" id="usersTable">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0" id="users-table">
+                        <thead class="table-light">
+                            <tr style="background-color: #1e1e1e;">
+                                <th>ID</th>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Challenges Solved</th>
+                                <th>Registered</th>
+                                <th>Last Login</th>
+                                <th>Admin</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr id="user-{{ user.id }}">
+                                <td><span class="badge bg-secondary">{{ user.id }}</span></td>
+                                <td>
                                     <strong>{{ user.username }}</strong>
                                     {% if user.is_admin %}
                                         <span class="badge bg-danger ms-1">Admin</span>
                                     {% endif %}
+                                </td>
+                                <td>
+                                    <strong class="text-info">{{ user.email }}</strong>
                                     <br>
-                                    <small class="text-muted">{{ user.email }}</small>
-                                </div>
-                            </div>
-                        </td>
-                        <td>
-                            <span class="font-monospace">{{ session.ip_address }}</span>
-                            {% if user.get_concurrent_sessions_from_different_ips()[0] %}
-                                <br><span class="badge bg-warning">Multi-IP</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if session.location_city %}
-                                <i class="fas fa-map-marker-alt text-info"></i>
-                                {{ session.location_city }}, {{ session.location_country }}
-                            {% else %}
-                                <span class="text-muted">Unknown</span>
-                            {% endif %}
-                        </td>
-                        <td>
+                                    <small class="text-muted">{{ user.email.split('@')[1] if '@' in user.email else '' }}</small>
+                                </td>
+                                <td>
+                                    <span class="badge bg-success">{{ user.solved_challenges|length }}</span>
+                                    {% if user.solved_challenges|length > 0 %}
+                                        <div class="progress mt-1" style="height: 4px;">
+                                            {% set user_progress = (user.solved_challenges|length / challenges|length) * 100 %}
+                                            <div class="progress-bar bg-success" style="width: {{ user_progress }}%;"></div>
+                                        </div>
+                                    {% endif %}
+                                </td>
+                                <td class="text-muted small">
+                                    {{ user.registered_on.strftime('%Y-%m-%d') if user.registered_on else 'N/A' }}
+                                </td>
+                                <td class="text-muted small">
+                                    {{ user.last_login.strftime('%Y-%m-%d %H:%M') if user.last_login else 'Never' }}
+                                </td>
+                                <td>
+                                    {% if user.is_admin %}
+                                        <i class="fas fa-crown text-warning"></i>
+                                    {% else %}
+                                        <i class="fas fa-user text-muted"></i>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <button class="btn btn-outline-primary" onclick="viewUserDetails({{ user.id }})" title="View Details">
+                                            <i class="fas fa-eye"></i>
+                                        </button>
+                                        {% if user.id != session.get('user_id') %}
+                                        <button class="btn btn-outline-warning" onclick="toggleAdmin({{ user.id }})" title="Toggle Admin">
+                                            <i class="fas fa-user-cog"></i>
+                                        </button>
+                                        {% if not user.is_admin %}
+                                        <button class="btn btn-outline-danger" onclick="deleteUser({{ user.id }})" title="Delete User">
+                                            <i class="fas fa-trash"></i>
+                                        </button>
+                                        {% endif %}
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Challenges & Recent Activity -->
+    <div class="col-lg-4">
+        <!-- Challenges Overview -->
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="fas fa-flag me-2"></i>Challenges Overview</h5>
+            </div>
+            <div class="card-body">
+                {% for challenge in challenges %}
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <strong>Challenge {{ challenge.index + 1 }}</strong>
+                        <br>
+                        <small class="text-muted">{{ challenge.secret_type }}</small>
+                    </div>
+                    <div>
+                        <span class="badge bg-info">{{ challenge.solves }} solves</span>
+                        <br>
+                        <small class="text-muted">{{ challenge.success_rate }}%</small>
+                    </div>
+                </div>
+                {% if not loop.last %}
+                <hr class="my-2">
+                {% endif %}
+                {% endfor %}
+            </div>
+        </div>
+        
+        <!-- Recent Activity -->
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-clock me-2"></i>Recent Solves</h5>
+                <button class="btn btn-sm btn-outline-primary" onclick="refreshActivity()" title="Refresh">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div class="list-group list-group-flush" id="recent-activity">
+                    {% for solve in solves|sort(attribute='solved_on', reverse=true) %}
+                    {% if loop.index <= 10 %}
+                    <div class="list-group-item">
+                        <div class="d-flex justify-content-between align-items-start">
                             <div>
-                                <i class="fas fa-{{ 'mobile-alt' if 'Mobile' in session.device else 'desktop' }}"></i>
-                                {{ session.device }}
+                                <strong>{{ solve.user.username }}</strong>
+                                <br>
+                                <small class="text-muted">Challenge {{ solve.challenge_index + 1 }}</small>
                             </div>
-                            <small class="text-muted">{{ session.operating_system }}</small>
-                        </td>
-                        <td>
-                            <div title="{{ session.user_agent }}">
-                                {{ session.browser }}
+                            <div class="text-end">
+                                <small class="text-success">
+                                    <i class="fas fa-check-circle"></i>
+                                </small>
+                                <br>
+                                <small class="text-muted">
+                                    {{ solve.solved_on.strftime('%m-%d %H:%M') if solve.solved_on else 'N/A' }}
+                                </small>
                             </div>
-                        </td>
-                        <td class="text-muted small">
-                            {{ session.login_time.strftime('%Y-%m-%d %H:%M') }}
-                        </td>
-                        <td class="text-muted small">
-                            <span title="{{ session.last_activity.strftime('%Y-%m-%d %H:%M:%S') }}">
-                                {{ session.last_activity.strftime('%H:%M') }}
-                            </span>
-                            {% set minutes_ago = ((now - session.last_activity).total_seconds() / 60) | int %}
-                            {% if minutes_ago < 5 %}
-                                <span class="badge bg-success">Active</span>
-                            {% elif minutes_ago < 30 %}
-                                <span class="badge bg-warning">{{ minutes_ago }}m ago</span>
-                            {% else %}
-                                <span class="badge bg-secondary">{{ minutes_ago }}m ago</span>
-                            {% endif %}
-                        </td>
-                        <td class="text-muted small">
-                            {% set duration_hours = ((session.last_activity - session.login_time).total_seconds() / 3600) | int %}
-                            {% set duration_minutes = (((session.last_activity - session.login_time).total_seconds() % 3600) / 60) | int %}
-                            {% if duration_hours > 0 %}
-                                {{ duration_hours }}h {{ duration_minutes }}m
-                            {% else %}
-                                {{ duration_minutes }}m
-                            {% endif %}
-                        </td>
-                        <td>
-                            <div class="btn-group btn-group-sm">
-                                <button class="btn btn-outline-info" onclick="viewSessionDetails('{{ session.id }}')" title="View Details">
-                                    <i class="fas fa-eye"></i>
-                                </button>
-                                <button class="btn btn-outline-primary" onclick="viewUserSessions({{ user.id }})" title="User's All Sessions">
-                                    <i class="fas fa-history"></i>
-                                </button>
-                                <button class="btn btn-outline-danger" onclick="terminateSession('{{ session.id }}')" title="Terminate Session">
-                                    <i class="fas fa-sign-out-alt"></i>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
+                        </div>
+                    </div>
+                    {% endif %}
                     {% endfor %}
-                </tbody>
-            </table>
+                </div>
+            </div>
         </div>
     </div>
 </div>
 
-<!-- Session Statistics -->
+<!-- Challenge Details -->
 <div class="row mt-4">
-    <div class="col-md-4">
-        <div class="card bg-info text-white">
-            <div class="card-body text-center">
-                <h4>{{ active_sessions|length }}</h4>
-                <small>Active Sessions</small>
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0"><i class="fas fa-list-alt me-2"></i>Challenge Details</h5>
+                <button class="btn btn-sm btn-outline-primary" data-bs-toggle="collapse" data-bs-target="#challengeDetails">
+                    <i class="fas fa-chevron-down"></i>
+                </button>
             </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card bg-warning text-white">
-            <div class="card-body text-center">
-                <h4>{{ multiple_sessions|length }}</h4>
-                <small>Users with Multiple Sessions</small>
-            </div>
-        </div>
-    </div>
-    <div class="col-md-4">
-        <div class="card bg-danger text-white">
-            <div class="card-body text-center">
-                <h4>{{ multiple_sessions|selectattr('different_ips')|list|length }}</h4>
-                <small>Suspicious Multi-IP Users</small>
+            <div class="card-body collapse show" id="challengeDetails">
+                <div class="table-responsive">
+                    <table class="table">
+                        <thead>
+                            <tr>
+                                <th>Challenge #</th>
+                                <th>Description</th>
+                                <th>File Path</th>
+                                <th>Secret Type</th>
+                                <th>Original Secret</th>
+                                <th>Total Solves</th>
+                                <th>Success Rate</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for challenge in challenges %}
+                            <tr>
+                                <td><span class="badge bg-primary">{{ challenge.index + 1 }}</span></td>
+                                <td>
+                                    <strong>{{ challenge.description }}</strong>
+                                </td>
+                                <td class="font-monospace small">
+                                    {{ challenge.filepath }}
+                                </td>
+                                <td>
+                                    <span class="badge bg-secondary">{{ challenge.secret_type }}</span>
+                                </td>
+                                <td class="font-monospace small" style="max-width: 200px; word-wrap: break-word;">
+                                    <span title="{{ challenge.old_secret }}">{{ challenge.old_secret }}</span>
+                                </td>
+                                <td>
+                                    <span class="badge bg-success">{{ challenge.solves }}</span>
+                                </td>
+                                <td>
+                                    {% if total_users > 0 %}
+                                        <div class="progress" style="height: 20px;">
+                                            <div class="progress-bar" style="width: {{ challenge.success_rate }}%;">
+                                                {{ challenge.success_rate }}%
+                                            </div>
+                                        </div>
+                                    {% else %}
+                                        <span class="text-muted">N/A</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <button class="btn btn-sm btn-outline-info" onclick="viewChallengeDetails({{ challenge.index }})" title="View Submissions">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
 </div>
 
-<!-- Session Details Modal -->
-<div class="modal fade" id="sessionDetailsModal" tabindex="-1">
+<!-- Quick Actions -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card bg-light">
+            <div class="card-body text-center">
+                <h6 class="card-title">Quick Actions</h6>
+                <div class="btn-group" role="group">
+                    <div class="btn-group" role="group">
+                        <button class="btn btn-outline-success dropdown-toggle" data-bs-toggle="dropdown">
+                            <i class="fas fa-download me-1"></i>Export Data
+                        </button>
+                        <ul class="dropdown-menu">
+                            <li><a class="dropdown-item" href="#" onclick="exportData('users')">Export Users</a></li>
+                            <li><a class="dropdown-item" href="#" onclick="exportData('solves')">Export Solves</a></li>
+                        </ul>
+                    </div>
+                    <button class="btn btn-outline-warning" onclick="resetChallenges()">
+                        <i class="fas fa-redo me-1"></i>Reset Challenges
+                    </button>
+                    <button class="btn btn-outline-info" onclick="viewAnalytics()">
+                        <i class="fas fa-chart-bar me-1"></i>View Analytics
+                    </button>
+                    <button class="btn btn-outline-secondary" onclick="refreshDashboard()">
+                        <i class="fas fa-sync-alt me-1"></i>Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- User Details Modal -->
+<div class="modal fade" id="userDetailsModal" tabindex="-1">
     <div class="modal-dialog modal-lg">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">Session Details</h5>
+                <h5 class="modal-title">User Details</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="sessionDetailsContent">
+            <div class="modal-body" id="userDetailsContent">
                 <!-- Content loaded dynamically -->
             </div>
         </div>
     </div>
 </div>
 
-<!-- User Sessions History Modal -->
-<div class="modal fade" id="userSessionsModal" tabindex="-1">
+<!-- Analytics Modal -->
+<div class="modal fade" id="analyticsModal" tabindex="-1">
     <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
-                <h5 class="modal-title">User Session History</h5>
+                <h5 class="modal-title">CTF Analytics</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="userSessionsContent">
+            <div class="modal-body" id="analyticsContent">
                 <!-- Content loaded dynamically -->
             </div>
         </div>
@@ -224,11 +360,20 @@
 </div>
 
 <style>
-/* Enhanced styling for session management */
+.opacity-75 {
+    opacity: 0.75;
+}
+
+/* Dark theme compatibility */
 .card {
     background-color: #1e1e1e !important;
     border-color: #333 !important;
     box-shadow: 0 0.125rem 0.25rem rgba(0, 0, 0, 0.3);
+    transition: box-shadow 0.15s ease-in-out;
+}
+
+.card:hover {
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.5);
 }
 
 .card-header {
@@ -246,13 +391,42 @@
     color: #e0e0e0 !important;
 }
 
+.table-striped > tbody > tr:nth-of-type(odd) > td {
+    background-color: #252525 !important;
+}
+
+.badge {
+    font-weight: 500;
+}
+
+.progress {
+    background-color: #333 !important;
+}
+
 .table th {
-    border-bottom-color: #444 !important;
+    border-top: none;
     font-weight: 600;
+    font-size: 0.875rem;
+    border-bottom-color: #444 !important;
 }
 
 .table td {
     border-bottom-color: #444 !important;
+}
+
+.btn-group-sm > .btn {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.875rem;
+}
+
+.list-group-item {
+    background-color: #1e1e1e !important;
+    border-color: #444 !important;
+    color: #e0e0e0 !important;
+}
+
+.list-group-item:last-child {
+    border-bottom: none;
 }
 
 .bg-light {
@@ -263,39 +437,6 @@
     color: #6c757d !important;
 }
 
-.alert-warning {
-    background-color: #664d03 !important;
-    border-color: #997404 !important;
-    color: #ffda6a !important;
-}
-
-.border-warning {
-    border-color: #997404 !important;
-}
-
-.font-monospace {
-    font-family: 'Courier New', monospace;
-}
-
-.badge {
-    font-size: 0.75em;
-}
-
-@keyframes pulse-warning {
-    0% { background-color: #ffc107; }
-    50% { background-color: #ffed4e; }
-    100% { background-color: #ffc107; }
-}
-
-.badge.bg-warning {
-    animation: pulse-warning 2s infinite;
-}
-
-.table-responsive {
-    max-height: 600px;
-    overflow-y: auto;
-}
-
 .modal-content {
     background-color: #1e1e1e !important;
     border-color: #333 !important;
@@ -304,12 +445,35 @@
 .modal-header {
     border-bottom-color: #444 !important;
 }
+
+.dropdown-menu {
+    background-color: #2a2a2a !important;
+    border-color: #444 !important;
+}
+
+.dropdown-item {
+    color: #e0e0e0 !important;
+}
+
+.dropdown-item:hover {
+    background-color: #333 !important;
+    color: #fff !important;
+}
+
+.table > :not(caption) > * > * {
+  background-color: #343434 !important;
+}
 </style>
 
 <script>
-function terminateSession(sessionId) {
-    if (confirm('Are you sure you want to terminate this session? The user will be logged out immediately.')) {
-        fetch(`/admin/session/${sessionId}/terminate`, {
+// JavaScript functions for admin functionality
+function exportData(type) {
+    window.open(`/admin/export?type=${type}`, '_blank');
+}
+
+function toggleAdmin(userId) {
+    if (confirm('Are you sure you want to toggle admin status for this user?')) {
+        fetch(`/admin/user/${userId}/toggle_admin`, {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -319,8 +483,7 @@ function terminateSession(sessionId) {
         .then(data => {
             if (data.success) {
                 showAlert('success', data.message);
-                document.getElementById(`session-${sessionId}`).remove();
-                updateSessionCounts();
+                refreshDashboard();
             } else {
                 showAlert('danger', data.error);
             }
@@ -332,112 +495,34 @@ function terminateSession(sessionId) {
     }
 }
 
-function viewSessionDetails(sessionId) {
-    // Find session data from the table
-    const row = document.getElementById(`session-${sessionId}`);
-    if (!row) return;
-    
-    const cells = row.cells;
-    const content = `
-        <div class="row">
-            <div class="col-12">
-                <h6>Session Information</h6>
-                <table class="table table-sm">
-                    <tr><td><strong>Session ID:</strong></td><td class="font-monospace">${sessionId}</td></tr>
-                    <tr><td><strong>User:</strong></td><td>${cells[0].textContent.trim()}</td></tr>
-                    <tr><td><strong>IP Address:</strong></td><td class="font-monospace">${cells[1].textContent.trim()}</td></tr>
-                    <tr><td><strong>Location:</strong></td><td>${cells[2].textContent.trim()}</td></tr>
-                    <tr><td><strong>Device:</strong></td><td>${cells[3].textContent.trim()}</td></tr>
-                    <tr><td><strong>Browser:</strong></td><td>${cells[4].textContent.trim()}</td></tr>
-                    <tr><td><strong>Login Time:</strong></td><td>${cells[5].textContent.trim()}</td></tr>
-                    <tr><td><strong>Last Activity:</strong></td><td>${cells[6].textContent.trim()}</td></tr>
-                    <tr><td><strong>Session Duration:</strong></td><td>${cells[7].textContent.trim()}</td></tr>
-                </table>
-                
-                <div class="mt-3">
-                    <h6>Actions</h6>
-                    <button class="btn btn-danger" onclick="terminateSession('${sessionId}'); $('#sessionDetailsModal').modal('hide');">
-                        <i class="fas fa-sign-out-alt me-1"></i>Terminate Session
-                    </button>
-                </div>
-            </div>
-        </div>
-    `;
-    
-    document.getElementById('sessionDetailsContent').innerHTML = content;
-    new bootstrap.Modal(document.getElementById('sessionDetailsModal')).show();
-}
-
-function viewUserSessions(userId) {
-    fetch(`/admin/user/${userId}/sessions`)
+function deleteUser(userId) {
+    if (confirm('Are you sure you want to delete this user? This action cannot be undone!')) {
+        fetch(`/admin/user/${userId}/delete`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
         .then(response => response.json())
         .then(data => {
-            if (data.sessions) {
-                const content = `
-                    <div class="row mb-3">
-                        <div class="col-12">
-                            <h6>User: ${data.user.username} (${data.user.email})</h6>
-                            ${data.has_multiple_active ? '<span class="badge bg-warning">Has Multiple Active Sessions</span>' : ''}
-                        </div>
-                    </div>
-                    
-                    <div class="table-responsive" style="max-height: 500px;">
-                        <table class="table table-sm">
-                            <thead>
-                                <tr>
-                                    <th>IP Address</th>
-                                    <th>Device & Browser</th>
-                                    <th>Location</th>
-                                    <th>Login Time</th>
-                                    <th>Last Activity</th>
-                                    <th>Status</th>
-                                    <th>Actions</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                ${data.sessions.map(session => `
-                                    <tr class="${session.is_active ? 'table-success' : 'table-secondary'}">
-                                        <td class="font-monospace">${session.ip_address}</td>
-                                        <td>
-                                            <div>${session.device}</div>
-                                            <small class="text-muted">${session.browser} on ${session.operating_system}</small>
-                                        </td>
-                                        <td>${session.location || 'Unknown'}</td>
-                                        <td class="small">${session.login_time}</td>
-                                        <td class="small">${session.last_activity}</td>
-                                        <td>
-                                            <span class="badge ${session.is_active ? 'bg-success' : 'bg-secondary'}">
-                                                ${session.is_active ? 'Active' : 'Inactive'}
-                                            </span>
-                                        </td>
-                                        <td>
-                                            ${session.is_active ? 
-                                                `<button class="btn btn-sm btn-outline-danger" onclick="terminateSession('${session.id}')">
-                                                    <i class="fas fa-times"></i>
-                                                </button>` : 
-                                                '<span class="text-muted">-</span>'
-                                            }
-                                        </td>
-                                    </tr>
-                                `).join('')}
-                            </tbody>
-                        </table>
-                    </div>
-                `;
-                
-                document.getElementById('userSessionsContent').innerHTML = content;
-                new bootstrap.Modal(document.getElementById('userSessionsModal')).show();
+            if (data.success) {
+                showAlert('success', data.message);
+                document.getElementById(`user-${userId}`).remove();
+                refreshStats();
+            } else {
+                showAlert('danger', data.error);
             }
         })
         .catch(error => {
-            showAlert('danger', 'Failed to load user sessions');
+            showAlert('danger', 'An error occurred');
             console.error(error);
         });
+    }
 }
 
-function cleanupOldSessions() {
-    if (confirm('This will remove all inactive sessions older than 30 days. Continue?')) {
-        fetch('/admin/cleanup_sessions', {
+function resetChallenges() {
+    if (confirm('Are you sure you want to reset ALL challenge progress? This will delete all solved challenges for all users!')) {
+        fetch('/admin/reset_challenges', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
@@ -446,29 +531,195 @@ function cleanupOldSessions() {
         .then(response => response.json())
         .then(data => {
             if (data.success) {
-                showAlert('success', `Cleaned up ${data.removed} old sessions`);
+                showAlert('success', data.message);
+                refreshDashboard();
             } else {
                 showAlert('danger', data.error);
             }
         })
         .catch(error => {
-            showAlert('danger', 'An error occurred during cleanup');
+            showAlert('danger', 'An error occurred');
             console.error(error);
         });
     }
 }
 
-function refreshSessions() {
-    showAlert('info', 'Refreshing sessions...');
+function viewUserDetails(userId) {
+    fetch(`/admin/user/${userId}/details`)
+        .then(response => response.json())
+        .then(data => {
+            if (data.user) {
+                const content = `
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h6>User Information</h6>
+                            <table class="table table-sm">
+                                <tr><td><strong>ID:</strong></td><td>${data.user.id}</td></tr>
+                                <tr><td><strong>Username:</strong></td><td>${data.user.username}</td></tr>
+                                <tr><td><strong>Email:</strong></td><td>${data.user.email}</td></tr>
+                                <tr><td><strong>Registered:</strong></td><td>${data.user.registered_on}</td></tr>
+                                <tr><td><strong>Last Login:</strong></td><td>${data.user.last_login}</td></tr>
+                                <tr><td><strong>Admin:</strong></td><td>${data.user.is_admin ? 'Yes' : 'No'}</td></tr>
+                                <tr><td><strong>Total Solves:</strong></td><td>${data.user.total_solves}</td></tr>
+                            </table>
+                        </div>
+                        <div class="col-md-6">
+                            <h6>Solved Challenges</h6>
+                            <div style="max-height: 300px; overflow-y: auto;">
+                                ${data.solved_challenges.map(solve => `
+                                    <div class="mb-2 p-2 border rounded">
+                                        <strong>Challenge ${solve.challenge_index + 1}:</strong> ${solve.challenge_name}<br>
+                                        <small class="text-muted">Solved: ${solve.solved_on}</small><br>
+                                        <small class="font-monospace">${solve.flag_submitted}</small>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('userDetailsContent').innerHTML = content;
+                new bootstrap.Modal(document.getElementById('userDetailsModal')).show();
+            }
+        })
+        .catch(error => {
+            showAlert('danger', 'Failed to load user details');
+            console.error(error);
+        });
+}
+
+function viewAnalytics() {
+    fetch('/admin/stats')
+        .then(response => response.json())
+        .then(data => {
+            const content = `
+                <div class="row mb-4">
+                    <div class="col-md-12">
+                        <h6>Overview Statistics</h6>
+                        <div class="row">
+                            <div class="col-md-3">
+                                <div class="card bg-primary text-white text-center">
+                                    <div class="card-body">
+                                        <h5>${data.overview.total_users}</h5>
+                                        <small>Total Users</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-success text-white text-center">
+                                    <div class="card-body">
+                                        <h5>${data.overview.active_users}</h5>
+                                        <small>Active Users</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-info text-white text-center">
+                                    <div class="card-body">
+                                        <h5>${data.overview.total_solves}</h5>
+                                        <small>Total Solves</small>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <div class="card bg-warning text-white text-center">
+                                    <div class="card-body">
+                                        <h5>${data.overview.avg_solves_per_user}</h5>
+                                        <small>Avg Solves/User</small>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="row">
+                    <div class="col-md-6">
+                        <h6>Challenge Performance</h6>
+                        <div style="max-height: 400px; overflow-y: auto;">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Challenge</th>
+                                        <th>Solves</th>
+                                        <th>Success Rate</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.challenge_stats.map(challenge => `
+                                        <tr>
+                                            <td>Challenge ${challenge.index + 1}</td>
+                                            <td><span class="badge bg-info">${challenge.solves}</span></td>
+                                            <td>
+                                                <div class="progress" style="height: 20px;">
+                                                    <div class="progress-bar" style="width: ${challenge.success_rate}%;">${challenge.success_rate}%</div>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                    
+                    <div class="col-md-6">
+                        <h6>Top Performers</h6>
+                        <div style="max-height: 400px; overflow-y: auto;">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>User</th>
+                                        <th>Solves</th>
+                                        <th>Completion</th>
+                                        <th>Last Solve</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    ${data.top_performers.map(user => `
+                                        <tr>
+                                            <td><strong>${user.username}</strong></td>
+                                            <td><span class="badge bg-success">${user.solve_count}</span></td>
+                                            <td>${user.completion_rate}%</td>
+                                            <td><small>${user.last_solve}</small></td>
+                                        </tr>
+                                    `).join('')}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('analyticsContent').innerHTML = content;
+            new bootstrap.Modal(document.getElementById('analyticsModal')).show();
+        })
+        .catch(error => {
+            showAlert('danger', 'Failed to load analytics');
+            console.error(error);
+        });
+}
+
+function refreshActivity() {
+    showAlert('info', 'Refreshing activity...');
     setTimeout(() => {
         location.reload();
     }, 1000);
 }
 
-function updateSessionCounts() {
-    // Update the statistics cards
-    const activeSessionsCount = document.querySelectorAll('#sessions-table tbody tr').length;
-    // Update counts in the UI if needed
+function refreshDashboard() {
+    showAlert('info', 'Refreshing dashboard...');
+    setTimeout(() => {
+        location.reload();
+    }, 1000);
+}
+
+function refreshStats() {
+    fetch('/admin/stats')
+        .then(response => response.json())
+        .then(data => {
+            document.getElementById('total-users').textContent = data.overview.total_users;
+            document.getElementById('active-players').textContent = data.overview.active_users;
+            document.getElementById('total-solves').textContent = data.overview.total_solves;
+        })
+        .catch(error => console.error(error));
 }
 
 function showAlert(type, message) {
@@ -489,10 +740,12 @@ function showAlert(type, message) {
     }, 5000);
 }
 
-// Auto-refresh every 2 minutes
-setInterval(() => {
-    location.reload();
-}, 120000);
+function viewChallengeDetails(challengeIndex) {
+    showAlert('info', `Viewing details for Challenge ${challengeIndex + 1}`);
+}
+
+// Auto-refresh stats every 5 minutes
+setInterval(refreshStats, 300000);
 
 // Initialize tooltips
 document.addEventListener('DOMContentLoaded', function() {
@@ -502,5 +755,4 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 });
 </script>
-
 {% endblock %}
