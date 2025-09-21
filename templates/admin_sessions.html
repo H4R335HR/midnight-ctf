@@ -330,7 +330,9 @@
 function formatToIST(utcDateString) {
     if (!utcDateString) return 'N/A';
     
-    const utcDate = new Date(utcDateString);
+    // Ensure the date is treated as UTC by adding 'Z' if not present
+    const utcString = utcDateString.includes('Z') ? utcDateString : utcDateString + 'Z';
+    const utcDate = new Date(utcString);
     const istOptions = {
         timeZone: 'Asia/Kolkata',
         month: 'short',
@@ -346,7 +348,9 @@ function formatToIST(utcDateString) {
 function formatTimeOnly(utcDateString) {
     if (!utcDateString) return 'N/A';
     
-    const utcDate = new Date(utcDateString);
+    // Ensure the date is treated as UTC by adding 'Z' if not present
+    const utcString = utcDateString.includes('Z') ? utcDateString : utcDateString + 'Z';
+    const utcDate = new Date(utcString);
     const istOptions = {
         timeZone: 'Asia/Kolkata',
         hour: '2-digit',
@@ -360,7 +364,9 @@ function formatTimeOnly(utcDateString) {
 function getTimeAgo(utcDateString) {
     if (!utcDateString) return '';
     
-    const utcDate = new Date(utcDateString);
+    // Ensure the date is treated as UTC by adding 'Z' if not present
+    const utcString = utcDateString.includes('Z') ? utcDateString : utcDateString + 'Z';
+    const utcDate = new Date(utcString);
     const now = new Date();
     const diffMs = now - utcDate;
     const diffMins = Math.floor(diffMs / (1000 * 60));
@@ -374,8 +380,12 @@ function getTimeAgo(utcDateString) {
 function calculateDuration(loginTime, lastActivity) {
     if (!loginTime || !lastActivity) return 'N/A';
     
-    const start = new Date(loginTime);
-    const end = new Date(lastActivity);
+    // Ensure the dates are treated as UTC by adding 'Z' if not present
+    const loginString = loginTime.includes('Z') ? loginTime : loginTime + 'Z';
+    const lastActivityString = lastActivity.includes('Z') ? lastActivity : lastActivity + 'Z';
+    
+    const start = new Date(loginString);
+    const end = new Date(lastActivityString);
     const diffMs = end - start;
     const diffMins = Math.floor(diffMs / (1000 * 60));
     const hours = Math.floor(diffMins / 60);
