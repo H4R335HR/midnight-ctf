@@ -686,40 +686,91 @@ def recent_users_with_sessions():
     if not user.is_admin:
         return jsonify({'error': 'Unauthorized'}), 403
     
-    # Get all users who have had sessions in the last 30 days
-    cutoff_date = datetime.utcnow() - timedelta(days=30)
-    
-    # Query to get users with their session information
-    users_with_sessions = db.session.query(
-        User,
-        db.func.count(UserSession.id).label('total_sessions'),
-        db.func.max(UserSession.last_activity).label('last_activity'),
-        db.func.sum(db.case([(UserSession.is_active == True, 1)], else_=0)).label('active_sessions')
-    ).join(
-        UserSession, User.id == UserSession.user_id
-    ).filter(
-        UserSession.login_time >= cutoff_date
-    ).group_by(User.id).order_by(db.desc('last_activity')).all()
-    
-    users_data = []
-    for user_obj, total_sessions, last_activity, active_sessions in users_with_sessions:
-        users_data.append({
-            'id': user_obj.id,
-            'username': user_obj.username,
-            'email': user_obj.email,
-            'is_admin': user_obj.is_admin,
-            'total_sessions': total_sessions,
-            'active_sessions': active_sessions or 0,
-            'has_active_sessions': (active_sessions or 0) > 0,
-            'last_activity': last_activity.isoformat() if last_activity else None  # Send ISO format for JS
+    try:
+        # Get all users who have had sessions in the last 30 days
+        cutoff_date = datetime.utcnow() - timedelta(days=30)
+        
+        # Get unique user IDs who have sessions in the last 30 days
+        recent_user_ids = db.session.query(UserSession.user_id).filter(
+            UserSession.login_time >= cutoff_date
+        ).distinct().all()
+        
+        if not recent_user_ids:
+            return jsonify({
+                'success': True,
+                'users': [],
+                'total_users': 0
+            })
+        
+        # Extract the actual IDs from tuples
+        user_ids = [uid[0] for uid in recent_user_ids]
+        
+        users_data = []
+        
+        # Process each user individually to avoid complex query issues
+        for user_id in user_ids:
+            try:
+                # Get user object
+                user_obj = User.query.get(user_id)
+                if not user_obj:
+                    continue
+                
+                # Count total sessions in last 30 days
+                total_sessions = UserSession.query.filter(
+                    UserSession.user_id == user_id,
+                    UserSession.login_time >= cutoff_date
+                ).count()
+                
+                # Count active sessions
+                active_sessions = UserSession.query.filter(
+                    UserSession.user_id == user_id,
+                    UserSession.is_active == True
+                ).count()
+                
+                # Get most recent activity
+                latest_session = UserSession.query.filter(
+                    UserSession.user_id == user_id
+                ).order_by(UserSession.last_activity.desc()).first()
+                
+                last_activity = None
+                if latest_session and latest_session.last_activity:
+                    last_activity = latest_session.last_activity.isoformat()
+                
+                user_data = {
+                    'id': user_obj.id,
+                    'username': user_obj.username,
+                    'email': user_obj.email,
+                    'is_admin': user_obj.is_admin,
+                    'total_sessions': total_sessions,
+                    'active_sessions': active_sessions,
+                    'has_active_sessions': active_sessions > 0,
+                    'last_activity': last_activity
+                }
+                
+                users_data.append(user_data)
+                
+            except Exception as e:
+                app.logger.error(f"Error processing user {user_id}: {str(e)}")
+                continue
+        
+        # Sort by last activity (most recent first)
+        users_data.sort(key=lambda x: x['last_activity'] or '0000-00-00', reverse=True)
+        
+        return jsonify({
+            'success': True,
+            'users': users_data,
+            'total_users': len(users_data)
         })
-    
-    return jsonify({
-        'success': True,
-        'users': users_data,
-        'total_users': len(users_data)
-    })
-
+        
+    except Exception as e:
+        app.logger.error(f"Error in recent_users_with_sessions: {str(e)}")
+        import traceback
+        app.logger.error(f"Full traceback: {traceback.format_exc()}")
+        
+        return jsonify({
+            'success': False,
+            'error': f'Database error: {str(e)}'
+        }), 500
 
 @app.route('/admin/user/<int:user_id>/sessions')
 @login_required
