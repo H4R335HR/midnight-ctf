@@ -8,6 +8,7 @@ import json
 import csv
 import requests
 import io
+import pytz
 from werkzeug.utils import secure_filename
 from io import StringIO
 from flask import jsonify, make_response, request
@@ -19,6 +20,8 @@ from wtforms.validators import DataRequired, Email, ValidationError, Length
 from datetime import datetime, timedelta
 from functools import wraps
 from user_agents import parse
+
+IST = pytz.timezone('Asia/Kolkata')
 
 # Initialize Flask app
 app = Flask(__name__)
@@ -191,6 +194,18 @@ class FlagSubmissionForm(FlaskForm):
 
 
 # Helper functions
+def utc_to_ist(utc_dt):
+    """Convert UTC datetime to IST"""
+    if utc_dt is None:
+        return None
+    if utc_dt.tzinfo is None:
+        utc_dt = pytz.utc.localize(utc_dt)
+    return utc_dt.astimezone(IST)
+
+def ist_now():
+    """Get current time in IST"""
+    return datetime.now(IST)
+
 def login_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
@@ -654,13 +669,14 @@ def admin_sessions():
                 'different_ips': has_different_ips
             })
     
-    # Add current time to template context
-    current_time = datetime.utcnow()
+    # Convert times to IST for template
+    current_time_ist = ist_now()
     
     return render_template('admin_sessions.html', 
                          active_sessions=active_sessions,
                          multiple_sessions=users_with_multiple_sessions,
-                         current_time=current_time)
+                         current_time=current_time_ist,
+                         utc_to_ist=utc_to_ist)
 
 @app.route('/admin/session/<session_id>/terminate', methods=['POST'])
 @login_required
@@ -677,6 +693,51 @@ def terminate_session(session_id):
     db.session.commit()
     
     return jsonify({'success': True, 'message': 'Session terminated'})
+
+# Update the recent users route
+@app.route('/admin/recent-users-with-sessions')
+@login_required
+def recent_users_with_sessions():
+    user = User.query.get(session['user_id'])
+    if not user.is_admin:
+        return jsonify({'error': 'Unauthorized'}), 403
+    
+    # Get all users who have had sessions in the last 30 days
+    cutoff_date = datetime.utcnow() - timedelta(days=30)
+    
+    # Query to get users with their session information
+    users_with_sessions = db.session.query(
+        User,
+        db.func.count(UserSession.id).label('total_sessions'),
+        db.func.max(UserSession.last_activity).label('last_activity'),
+        db.func.sum(db.case([(UserSession.is_active == True, 1)], else_=0)).label('active_sessions')
+    ).join(
+        UserSession, User.id == UserSession.user_id
+    ).filter(
+        UserSession.login_time >= cutoff_date
+    ).group_by(User.id).order_by(db.desc('last_activity')).all()
+    
+    users_data = []
+    for user_obj, total_sessions, last_activity, active_sessions in users_with_sessions:
+        # Convert UTC to IST for display
+        last_activity_ist = utc_to_ist(last_activity) if last_activity else None
+        
+        users_data.append({
+            'id': user_obj.id,
+            'username': user_obj.username,
+            'email': user_obj.email,
+            'is_admin': user_obj.is_admin,
+            'total_sessions': total_sessions,
+            'active_sessions': active_sessions or 0,
+            'has_active_sessions': (active_sessions or 0) > 0,
+            'last_activity': last_activity_ist.strftime('%d %b %Y %H:%M IST') if last_activity_ist else 'Never'
+        })
+    
+    return jsonify({
+        'success': True,
+        'users': users_data,
+        'total_users': len(users_data)
+    })
 
 @app.route('/admin/user/<int:user_id>/sessions')
 @login_required
@@ -698,6 +759,10 @@ def user_sessions(user_id):
     
     sessions_data = []
     for sess in sessions:
+        # Convert times to IST
+        login_time_ist = utc_to_ist(sess.login_time)
+        last_activity_ist = utc_to_ist(sess.last_activity)
+        
         sessions_data.append({
             'id': sess.id,
             'ip_address': sess.ip_address,
@@ -705,8 +770,8 @@ def user_sessions(user_id):
             'operating_system': sess.operating_system,
             'device': sess.device,
             'location': f"{sess.location_city}, {sess.location_country}" if sess.location_city else sess.location_country,
-            'login_time': sess.login_time.strftime('%Y-%m-%d %H:%M:%S'),
-            'last_activity': sess.last_activity.strftime('%Y-%m-%d %H:%M:%S'),
+            'login_time': login_time_ist.strftime('%d %b %Y %H:%M IST') if login_time_ist else 'N/A',
+            'last_activity': last_activity_ist.strftime('%d %b %Y %H:%M IST') if last_activity_ist else 'N/A',
             'is_active': sess.is_active,
             'user_agent': sess.user_agent
         })
